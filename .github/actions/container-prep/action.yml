@@ -81,5 +81,6 @@ runs:
         INPUT_EXEC: ${{ inputs.exec }}
         INPUT_WORKDIR: ${{ inputs.workdir }}
         INPUT_FORCE_REBUILD: ${{ inputs.force-rebuild }}
+        INPUT_USER_REPO: ${{ github.event.pull_request.head.repo.full_name || '' }}
         GITHUB_REPOSITORY: ${{ github.repository }}
       run: ${{ github.action_path }}/container-prep.sh

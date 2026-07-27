@@ -1,5 +1,6 @@
 # Test individual features of the container-prep action:
-# cache hits, force-rebuild, exec, workdir, and input validation.
+# cache hits, force-rebuild, exec, workdir, fork PR handling,
+# and input validation.
 
 name: Test features
 
@@ -183,6 +184,88 @@ jobs:
         run: |
           [[ "${{ steps.bad.outcome }}" == "failure" ]] \
             || { echo "::error::expected failure for invalid tag"; exit 1; }
+
+  # ── Fork PR: upstream cache hit ─────────────────────────────────
+  # Simulate a fork PR where the upstream image already exists.
+  # First build the image normally via the action, then run the
+  # script directly with INPUT_USER_REPO set to a fake fork.
+  # The second call should find the upstream image without rebuilding.
+  fork-pr-upstream-hit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build image in upstream registry
+        id: upstream
+        uses: ./.github/actions/container-prep
+        with:
+          base-image: 'alpine:3.20'
+          tag: 'fork-up-${{ github.sha }}'
+          packages: 'curl'
+
+      - name: Simulate fork PR (upstream hit)
+        id: fork
+        env:
+          INPUT_BASE_IMAGE: 'alpine:3.20'
+          INPUT_TAG: 'fork-up-${{ github.sha }}'
+          INPUT_PACKAGES: 'curl'
+          INPUT_SUFFIX: ''
+          INPUT_REGISTRY: 'ghcr.io'
+          INPUT_REGISTRY_USER: ${{ github.actor }}
+          INPUT_TOKEN: ${{ github.token }}
+          INPUT_EXEC: ''
+          INPUT_WORKDIR: '/github/workspace'
+          INPUT_FORCE_REBUILD: 'false'
+          INPUT_USER_REPO: 'fake-user/fake-fork'
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          GITHUB_OUTPUT="$(mktemp)"
+          export GITHUB_OUTPUT
+          bash .github/actions/container-prep/container-prep.sh
+          echo "build-skipped=$(grep '^build-skipped=' "$GITHUB_OUTPUT" | cut -d= -f2)" >> "$GITHUB_OUTPUT"
+          # Re-parse outputs for the verification step
+          cat "$GITHUB_OUTPUT"
+          grep '^build-skipped=true' "$GITHUB_OUTPUT" \
+            || { echo "::error::fork should have found the upstream image"; exit 1; }
+          grep "^image=${{ steps.upstream.outputs.image }}$" "$GITHUB_OUTPUT" \
+            || { echo "::error::fork should return the upstream image reference"; exit 1; }
+
+  # ── Fork PR: image path uses user repo ─────────────────────────
+  # When no cached image exists anywhere, a fork PR should target
+  # the user's registry path, not upstream.
+  fork-pr-user-image-path:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Simulate fork PR (no cache, verify image path)
+        env:
+          INPUT_BASE_IMAGE: 'alpine:3.20'
+          INPUT_TAG: 'fork-nocache-${{ github.sha }}'
+          INPUT_PACKAGES: ''
+          INPUT_SUFFIX: ''
+          INPUT_REGISTRY: 'ghcr.io'
+          INPUT_REGISTRY_USER: ${{ github.actor }}
+          INPUT_TOKEN: ${{ github.token }}
+          INPUT_EXEC: ''
+          INPUT_WORKDIR: '/github/workspace'
+          INPUT_FORCE_REBUILD: 'false'
+          INPUT_USER_REPO: 'fake-user/fake-fork'
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          GITHUB_OUTPUT="$(mktemp)"
+          export GITHUB_OUTPUT
+          # The build will succeed but push will fail (fake repo).
+          # We only need to verify the image path is correct.
+          bash .github/actions/container-prep/container-prep.sh 2>&1 \
+            | tee /tmp/fork-output.log \
+            && { echo "::error::push to non-existent repo should fail"; exit 1; } \
+            || true
+          # Verify the script detected the fork and chose the user image path
+          grep -q 'Fork PR detected' /tmp/fork-output.log \
+            || { echo "::error::should detect fork PR"; exit 1; }
+          grep -q 'ghcr.io/fake-user/fake-fork/' /tmp/fork-output.log \
+            || { echo "::error::image path should target user repo"; exit 1; }
 
   # ── No packages ───────────────────────────────────────────────────
   # Build with no packages at all -- should produce a working image.
