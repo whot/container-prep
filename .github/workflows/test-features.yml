@@ -1,0 +1,203 @@
+# Test individual features of the container-prep action:
+# cache hits, force-rebuild, exec, workdir, and input validation.
+
+name: Test features
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  # ── Cache hit ──────────────────────────────────────────────────────
+  # Build an image, then call the action again with the same tag.
+  # The second call must skip the build.
+  cache-hit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: First build (cold cache)
+        id: first
+        uses: ./.github/actions/container-prep
+        with:
+          base-image: 'alpine:3.20'
+          tag: 'cache-test-${{ github.sha }}'
+          packages: 'curl'
+
+      - name: Second call (warm cache)
+        id: second
+        uses: ./.github/actions/container-prep
+        with:
+          base-image: 'alpine:3.20'
+          tag: 'cache-test-${{ github.sha }}'
+          packages: 'curl'
+
+      - name: Verify cache was used
+        run: |
+          [[ "${{ steps.first.outputs.build-skipped }}" == "false" ]] \
+            || { echo "::error::first build should not have been skipped"; exit 1; }
+          [[ "${{ steps.second.outputs.build-skipped }}" == "true" ]] \
+            || { echo "::error::second build should have been skipped (cache hit)"; exit 1; }
+          [[ "${{ steps.first.outputs.image }}" == "${{ steps.second.outputs.image }}" ]] \
+            || { echo "::error::image references should match"; exit 1; }
+
+  # ── Force rebuild ──────────────────────────────────────────────────
+  # Build an image, then call again with force-rebuild.
+  # The second call must NOT skip the build.
+  force-rebuild:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: First build
+        id: first
+        uses: ./.github/actions/container-prep
+        with:
+          base-image: 'alpine:3.20'
+          tag: 'force-test-${{ github.sha }}'
+          packages: 'curl'
+
+      - name: Force rebuild
+        id: forced
+        uses: ./.github/actions/container-prep
+        with:
+          base-image: 'alpine:3.20'
+          tag: 'force-test-${{ github.sha }}'
+          packages: 'curl'
+          force-rebuild: 'true'
+
+      - name: Verify rebuild happened
+        run: |
+          [[ "${{ steps.forced.outputs.build-skipped }}" == "false" ]] \
+            || { echo "::error::force-rebuild should not skip"; exit 1; }
+
+  # ── exec ───────────────────────────────────────────────────────────
+  # Run a custom command that creates a marker file.
+  # Verify the file exists in the resulting image.
+  exec:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build with exec
+        id: prep
+        uses: ./.github/actions/container-prep
+        with:
+          base-image: 'alpine:3.20'
+          tag: 'exec-test-${{ github.sha }}'
+          exec: |
+            touch /exec-marker
+            echo "hello from exec" > /exec-output.txt
+
+      - name: Verify exec results
+        run: |
+          podman run --rm "${{ steps.prep.outputs.image }}" \
+            test -f /exec-marker \
+            || { echo "::error::/exec-marker not found"; exit 1; }
+          got=$(podman run --rm "${{ steps.prep.outputs.image }}" \
+            cat /exec-output.txt)
+          [[ "$got" == "hello from exec" ]] \
+            || { echo "::error::unexpected exec output: $got"; exit 1; }
+
+  # ── workdir ────────────────────────────────────────────────────────
+  # Build with a custom workdir and verify it took effect.
+  workdir:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build with custom workdir
+        id: prep
+        uses: ./.github/actions/container-prep
+        with:
+          base-image: 'alpine:3.20'
+          tag: 'workdir-test-${{ github.sha }}'
+          workdir: '/opt/myproject'
+
+      - name: Verify workdir
+        run: |
+          got=$(podman run --rm "${{ steps.prep.outputs.image }}" pwd)
+          [[ "$got" == "/opt/myproject" ]] \
+            || { echo "::error::expected /opt/myproject, got $got"; exit 1; }
+
+  # ── suffix ─────────────────────────────────────────────────────────
+  # Build with a custom suffix and verify the image path.
+  suffix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build with custom suffix
+        id: prep
+        uses: ./.github/actions/container-prep
+        with:
+          base-image: 'alpine:3.20'
+          tag: 'suffix-test-${{ github.sha }}'
+          suffix: 'custom/path'
+
+      - name: Verify image path contains custom suffix
+        run: |
+          image="${{ steps.prep.outputs.image }}"
+          [[ "$image" == *"/custom/path:"* ]] \
+            || { echo "::error::image path should contain custom/path: $image"; exit 1; }
+
+  # ── Validation: bad base-image (no version) ────────────────────────
+  bad-base-image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Should fail with no version tag
+        id: bad
+        uses: ./.github/actions/container-prep
+        continue-on-error: true
+        with:
+          base-image: 'fedora'
+          tag: 'should-not-build'
+
+      - name: Verify it failed
+        run: |
+          [[ "${{ steps.bad.outcome }}" == "failure" ]] \
+            || { echo "::error::expected failure for base-image without version"; exit 1; }
+
+  # ── Validation: bad tag ────────────────────────────────────────────
+  bad-tag:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Should fail with invalid tag
+        id: bad
+        uses: ./.github/actions/container-prep
+        continue-on-error: true
+        with:
+          base-image: 'alpine:3.20'
+          tag: '.starts-with-dot'
+
+      - name: Verify it failed
+        run: |
+          [[ "${{ steps.bad.outcome }}" == "failure" ]] \
+            || { echo "::error::expected failure for invalid tag"; exit 1; }
+
+  # ── No packages ───────────────────────────────────────────────────
+  # Build with no packages at all -- should produce a working image.
+  no-packages:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build without packages
+        id: prep
+        uses: ./.github/actions/container-prep
+        with:
+          base-image: 'alpine:3.20'
+          tag: 'nopkg-test-${{ github.sha }}'
+
+      - name: Verify image works
+        run: |
+          podman run --rm "${{ steps.prep.outputs.image }}" echo "ok"

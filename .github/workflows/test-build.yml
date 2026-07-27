@@ -1,0 +1,63 @@
+# Test that the container-prep action can build images for each
+# supported distro and that the resulting image is usable.
+
+name: Test build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - base-image: 'fedora:44'
+            test-pkg: gcc
+            test-cmd: 'gcc --version'
+          - base-image: 'ubuntu:24.04'
+            test-pkg: curl
+            test-cmd: 'curl --version'
+          - base-image: 'debian:bookworm'
+            test-pkg: curl
+            test-cmd: 'curl --version'
+          - base-image: 'alpine:3.20'
+            test-pkg: curl
+            test-cmd: 'curl --version'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build image
+        id: prep
+        uses: ./.github/actions/container-prep
+        with:
+          base-image: ${{ matrix.base-image }}
+          tag: 'test-${{ github.sha }}'
+          packages: ${{ matrix.test-pkg }}
+
+      - name: Verify outputs are set
+        run: |
+          [[ -n "${{ steps.prep.outputs.image }}" ]] \
+            || { echo "::error::image output is empty"; exit 1; }
+          [[ "${{ steps.prep.outputs.build-skipped }}" == "false" ]] \
+            || { echo "::error::expected build-skipped=false for fresh build"; exit 1; }
+
+      # Verify the image is usable by pulling and running the test
+      # command.  We can't use container: here because it's in the
+      # same job, so use podman run instead.
+      - name: Verify package is installed
+        run: |
+          podman run --rm "${{ steps.prep.outputs.image }}" ${{ matrix.test-cmd }}
+
+      - name: Verify working directory
+        run: |
+          got=$(podman run --rm "${{ steps.prep.outputs.image }}" pwd)
+          [[ "$got" == "/github/workspace" ]] \
+            || { echo "::error::expected /github/workspace, got $got"; exit 1; }

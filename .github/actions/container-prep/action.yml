@@ -1,0 +1,85 @@
+name: 'Container Prep'
+description: >
+  Build a container image if a tagged version does not already exist in the
+  registry.  When the image is already present the build is skipped entirely,
+  making CI pipelines faster on repeated runs.
+
+inputs:
+  base-image:
+    description: >
+      Base OCI image to build from (e.g. "fedora:44", "ubuntu:24.04",
+      "alpine:3.20").  The distro name is extracted from this value to
+      select the right package manager.
+    required: true
+  tag:
+    description: >
+      Tag for the built image.  Use a value that changes when the image
+      content should change. It's common to use a date-based tag like
+      "2024-03-20.0" for readability.
+    required: true
+  packages:
+    description: 'Space-separated list of packages to install.'
+    required: false
+    default: ''
+  suffix:
+    description: >
+      Optional path suffix appended to the image name.  Defaults to the
+      distro/version extracted from base-image (e.g. "fedora/44").
+    required: false
+    default: ''
+  registry:
+    description: 'Container registry to push to.'
+    required: false
+    default: 'ghcr.io'
+  token:
+    description: >
+      Authentication token for the registry.  Defaults to the automatic
+      GITHUB_TOKEN which has push access to ghcr.io/<owner>/<repo>.
+    required: false
+    default: ${{ github.token }}
+  exec:
+    description: >
+      Shell commands to run inside the container after packages are
+      installed (e.g. "pip install meson" or a multi-line script).
+      The repository is NOT available inside the container at build
+      time; use this for commands that only need the base image and
+      installed packages.
+    required: false
+    default: ''
+  workdir:
+    description: 'Working directory inside the container.'
+    required: false
+    default: '/github/workspace'
+  force-rebuild:
+    description: >
+      Set to "true" to force a build even if a cached image with
+      that tag already exists.
+    required: false
+    default: 'false'
+
+outputs:
+  image:
+    description: 'Full image reference (registry/path:tag) for downstream jobs.'
+    value: ${{ steps.prep.outputs.image }}
+  build-skipped:
+    description: '"true" if the image already existed and the build was skipped.'
+    value: ${{ steps.prep.outputs.build-skipped }}
+
+runs:
+  using: composite
+  steps:
+    - id: prep
+      shell: bash
+      env:
+        INPUT_BASE_IMAGE: ${{ inputs.base-image }}
+        INPUT_TAG: ${{ inputs.tag }}
+        INPUT_PACKAGES: ${{ inputs.packages }}
+        INPUT_SUFFIX: ${{ inputs.suffix }}
+        INPUT_REGISTRY: ${{ inputs.registry }}
+        INPUT_REGISTRY_USER: ${{ github.actor }}
+        INPUT_TOKEN: ${{ inputs.token }}
+        INPUT_EXEC: ${{ inputs.exec }}
+        INPUT_WORKDIR: ${{ inputs.workdir }}
+        INPUT_FORCE_REBUILD: ${{ inputs.force-rebuild }}
+        GITHUB_REPOSITORY: ${{ github.repository }}
+      run: ${{ github.action_path }}/container-prep.sh
