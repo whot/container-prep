@@ -1,0 +1,49 @@
+# CLAUDE.md
+
+## Project overview
+
+Reusable GitHub Actions for CI container management. The main action is
+`container-prep` which builds a container image and pushes it to ghcr.io,
+skipping the build when a cached image with the same tag already exists.
+
+Inspired by [freedesktop.org ci-templates](https://gitlab.freedesktop.org/freedesktop/ci-templates)
+but for GitHub Actions instead of GitLab CI.
+
+## Repository structure
+
+```
+.github/
+  actions/
+    container-prep/
+      action.yml              # Composite action definition (inputs/outputs/env)
+      container-prep.sh       # Implementation (bash)
+  workflows/
+    test-build.yml            # CI: matrix build across distros
+    test-features.yml         # CI: feature tests (cache, exec, workdir, fork PRs, etc.)
+```
+
+## Key concepts
+
+- The action uses `buildah` and `skopeo` (pre-installed on GitHub runners)
+- Image path: `ghcr.io/<owner>/<repo>/<distro>/<version>:<tag>`
+- Tag acts as cache key -- same tag = same image, bump tag = rebuild
+- Fork PRs auto-detect and push to the fork's registry, checking upstream first
+- Package manager is auto-detected from the distro name in `base-image`
+
+## Development guidelines
+
+- `container-prep.sh` uses `set -euo pipefail` -- all variables must be
+  quoted or use `${VAR:-}` for optional ones
+- The script must work without shellcheck warnings (use `# shellcheck disable=`
+  with justification when necessary)
+- Test new features in `test-features.yml` as separate jobs
+- Test distro support in `test-build.yml` via the matrix
+- Tests run the action via `uses: ./.github/actions/container-prep` or
+  invoke the script directly with env vars for scenarios that can't be
+  tested through the action (e.g. fork PR simulation)
+
+## Commit style
+
+- Prefix with component: `container-prep:` for action changes
+- Body should explain *why*, not just *what*
+- Include `Assisted-by: Claude:claude-opus-4-6` in all commits
