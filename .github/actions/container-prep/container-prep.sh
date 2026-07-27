@@ -14,7 +14,8 @@
 #   INPUT_EXEC           — shell commands to run after package installation
 #   INPUT_WORKDIR        — working directory inside the container
 #   INPUT_FORCE_REBUILD  — "true" to skip the cache check
-#   GITHUB_REPOSITORY    — owner/repo
+#   INPUT_USER_REPO      — for fork PRs: head repo full_name (e.g. "user/foo")
+#   GITHUB_REPOSITORY    — owner/repo (the PR target / upstream repo)
 #   GITHUB_OUTPUT        — file path for action outputs
 
 set -euo pipefail
@@ -55,10 +56,24 @@ if [[ ! "${INPUT_TAG}" =~ ^[a-zA-Z0-9_][a-zA-Z0-9_.\-]{0,127}$ ]]; then
     die "tag '${INPUT_TAG}' is not a valid OCI tag (must match [a-zA-Z0-9_.-]{1,128}, cannot start with '.' or '-')"
 fi
 
+# ── fork PR detection ────────────────────────────────────────────────────
+is_fork_pr="false"
+if [[ -n "${INPUT_USER_REPO:-}" && "${INPUT_USER_REPO}" != "${GITHUB_REPOSITORY}" ]]; then
+    is_fork_pr="true"
+    echo "Fork PR detected: ${INPUT_USER_REPO} -> ${GITHUB_REPOSITORY}"
+fi
+
 # ── image path ───────────────────────────────────────────────────────────
 suffix="${INPUT_SUFFIX:-${distro}/${version}}"
-image="${INPUT_REGISTRY}/${GITHUB_REPOSITORY}/${suffix}:${INPUT_TAG}"
-echo "Target image: $image"
+upstream_image="${INPUT_REGISTRY}/${GITHUB_REPOSITORY}/${suffix}:${INPUT_TAG}"
+
+if [[ "$is_fork_pr" == "true" ]]; then
+    user_image="${INPUT_REGISTRY}/${INPUT_USER_REPO}/${suffix}:${INPUT_TAG}"
+    echo "Upstream image: $upstream_image"
+    echo "User image:     $user_image"
+else
+    echo "Target image: $upstream_image"
+fi
 
 # ── registry login ───────────────────────────────────────────────────────
 group "Registry login"
@@ -69,19 +84,55 @@ endgroup
 
 # ── check whether image already exists ───────────────────────────────────
 build_needed="true"
+image=""       # will be set to the image reference we end up using
+
 if [[ "${INPUT_FORCE_REBUILD}" != "true" ]]; then
     group "Checking for existing image"
-    if skopeo inspect --no-tags --retry-times 3 \
-            --creds "${INPUT_REGISTRY_USER}:${INPUT_TOKEN}" \
-            "docker://${image}" >/dev/null 2>&1; then
-        echo "Image ${image} already exists -- skipping build"
+
+    # Step 1: check the upstream registry (always)
+    echo "Checking upstream: $upstream_image"
+    if [[ "$is_fork_pr" == "true" ]]; then
+        # For fork PRs the token is scoped to the fork, not upstream.
+        # Upstream is public so we can inspect without credentials.
+        inspect_args=(--no-tags --retry-times 3)
+    else
+        inspect_args=(--no-tags --retry-times 3
+                      --creds "${INPUT_REGISTRY_USER}:${INPUT_TOKEN}")
+    fi
+
+    if skopeo inspect "${inspect_args[@]}" \
+            "docker://${upstream_image}" >/dev/null 2>&1; then
+        echo "Image ${upstream_image} already exists -- skipping build"
+        image="$upstream_image"
         build_needed="false"
+    elif [[ "$is_fork_pr" == "true" ]]; then
+        # Step 2 (fork PRs only): check the user's registry
+        echo "Not found upstream -- checking user registry: $user_image"
+        if skopeo inspect --no-tags --retry-times 3 \
+                --creds "${INPUT_REGISTRY_USER}:${INPUT_TOKEN}" \
+                "docker://${user_image}" >/dev/null 2>&1; then
+            echo "Image ${user_image} already exists -- skipping build"
+            image="$user_image"
+            build_needed="false"
+        else
+            echo "Image not found in either registry -- will build"
+        fi
     else
         echo "Image not found -- will build"
     fi
+
     endgroup
 else
     echo "Force-rebuild requested -- skipping cache check"
+fi
+
+# Set the target image for building / output
+if [[ -z "$image" ]]; then
+    if [[ "$is_fork_pr" == "true" ]]; then
+        image="$user_image"
+    else
+        image="$upstream_image"
+    fi
 fi
 
 # ── build if needed ──────────────────────────────────────────────────────

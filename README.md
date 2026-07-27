@@ -116,6 +116,34 @@ Package manager detection is automatic based on the `base-image` name:
 Unknown distros trigger a warning but do not fail — useful when
 `base-image` already contains everything you need.
 
+### Fork PRs
+
+When a pull request comes from a **fork** (i.e. the head repo differs from the
+base repo), the action automatically adjusts its behavior:
+
+1. **Check the upstream registry first** — if the upstream project already has an
+   image with the same tag, the fork PR reuses it directly.  No build needed.
+2. **Check the fork's registry** — if the upstream image doesn't exist, the action
+   checks whether the fork already has a cached image.
+3. **Build and push to the fork** — if neither registry has the image, the action
+   builds it and pushes to `ghcr.io/<fork-owner>/<fork-repo>/…`.
+
+When the PR is merged, the resulting push to `main` triggers a normal run that
+rebuilds the image in the upstream project's registry.
+
+**Fork contributors** must supply a personal access token (PAT) with
+`packages:write` scope via the `token` input, since the default `GITHUB_TOKEN`
+does not have write access to the fork's package registry from a PR context:
+
+```yaml
+- uses: whot/gh-ci-templates/.github/actions/container-prep@main
+  with:
+    base-image: 'fedora:44'
+    tag: '2025-07-27.0'
+    packages: 'gcc meson'
+    token: ${{ secrets.CONTAINER_PAT }}   # PAT with packages:write
+```
+
 ## License
 
 MIT
