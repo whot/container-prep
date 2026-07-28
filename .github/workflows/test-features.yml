@@ -20,7 +20,7 @@ jobs:
   cache-hit:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: First build (cold cache)
         id: first
@@ -53,7 +53,7 @@ jobs:
   force-rebuild:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: First build
         id: first
@@ -83,7 +83,7 @@ jobs:
   exec:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Build with exec
         id: prep
@@ -110,7 +110,7 @@ jobs:
   workdir:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Build with custom workdir
         id: prep
@@ -131,7 +131,7 @@ jobs:
   suffix:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Build with custom suffix
         id: prep
@@ -151,7 +151,7 @@ jobs:
   bad-base-image:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Should fail with no version tag
         id: bad
@@ -170,7 +170,7 @@ jobs:
   bad-tag:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Should fail with invalid tag
         id: bad
@@ -193,7 +193,7 @@ jobs:
   fork-pr-upstream-hit:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Build image in upstream registry
         id: upstream
@@ -236,7 +236,7 @@ jobs:
   fork-pr-user-image-path:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Simulate fork PR (no cache, verify image path)
         env:
@@ -277,7 +277,7 @@ jobs:
   no-packages:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Build without packages
         id: prep
