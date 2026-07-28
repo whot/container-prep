@@ -305,6 +305,10 @@ if [[ "${INPUT_FORCE_REBUILD:-false}" != "true" ]]; then
             build_needed="false"
         else
             echo "Image not found in either registry -- will build"
+            echo "::warning::Fork PR image not found. If you just" \
+                 "pushed a tag change, your fork's CI may still be" \
+                 "building the image. Re-run this workflow once your" \
+                 "fork's build completes."
         fi
     else
         echo "Image not found -- will build"
@@ -427,7 +431,15 @@ if [[ "$build_needed" == "true" ]]; then
     # actually reclaims space in the final image.
     buildah commit --squash --format docker "$ctr" "$image"
     if [[ -z "$DRY_RUN" ]]; then
-        buildah push --retry 3 "$image"
+        if ! buildah push --retry 3 "$image"; then
+            if [[ "$is_fork_pr" == "true" ]]; then
+                echo "::error::Push failed. Fork PRs cannot push images" \
+                     "to the upstream registry. Push the tag change to" \
+                     "your fork first so that your fork's CI builds the" \
+                     "image, then update this PR."
+            fi
+            exit 1
+        fi
     else
         echo "Not pushing image, this is a dry run"
     fi
