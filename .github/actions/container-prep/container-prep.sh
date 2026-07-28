@@ -58,8 +58,7 @@ if [[ -z "${CI:-}" ]]; then
     SHORT="vh"
     LONG="help,verbose,dry-run,force,base-image:,tag:,packages:,suffix:,registry:,user:,token:,exec:,workdir:,upstream-repo:,"
 
-    ARGS=$(getopt -o "$SHORT" -l "$LONG" -- "$@")
-    if [ $? -ne 0 ]; then
+    if ! ARGS=$(getopt -o "$SHORT" -l "$LONG" -- "$@"); then
         echo "Failed to parse options." >&2
         exit 1
     fi
@@ -141,6 +140,7 @@ if [[ -z "${CI:-}" ]]; then
     done
 
     if [[ -z "${INPUT_BASE_IMAGE:-}" ]]; then
+        # shellcheck disable=SC1091
         source /etc/os-release
         INPUT_BASE_IMAGE="${ID}:${VERSION_ID}"
         echo "Defaulting to base image '${INPUT_BASE_IMAGE}'"
@@ -205,7 +205,7 @@ function check_required_env {
 
     if [[ ${#missing[@]} -gt 0 ]]
     then
-        die "Missing environment variables: ${missing[@]}"
+        die "Missing environment variables: ${missing[*]}"
     fi
 }
 
