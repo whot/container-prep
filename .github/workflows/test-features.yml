@@ -230,18 +230,18 @@ jobs:
           grep "^image=${{ steps.upstream.outputs.image }}$" "$GITHUB_OUTPUT" \
             || { echo "::error::fork should return the upstream image reference"; exit 1; }
 
-  # ── Fork PR: image path uses user repo ─────────────────────────
-  # When no cached image exists anywhere, a fork PR should target
-  # the user's registry path, not upstream.
-  fork-pr-user-image-path:
+  # ── Fork PR: build pushes to upstream ────────────────────────────
+  # When no cached image exists anywhere, a fork PR should still
+  # build and push to the upstream registry (not the fork's).
+  fork-pr-pushes-upstream:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
 
-      - name: Simulate fork PR (no cache, verify image path)
+      - name: Simulate fork PR (no cache, verify build targets upstream)
         env:
           INPUT_BASE_IMAGE: 'alpine:3.20'
-          INPUT_TAG: 'fork-nocache-${{ github.sha }}'
+          INPUT_TAG: 'fork-build-${{ github.sha }}'
           INPUT_PACKAGES: ''
           INPUT_SUFFIX: ''
           INPUT_REGISTRY: 'ghcr.io'
@@ -255,22 +255,19 @@ jobs:
         run: |
           GITHUB_OUTPUT="$(mktemp)"
           export GITHUB_OUTPUT
-          # The build will succeed but push will fail (fake repo).
-          # We only need to verify the image path is correct.
-          rc=0
-          bash .github/actions/container-prep/container-prep.sh \
-            > /tmp/fork-output.log 2>&1 \
-            || rc=$?
-          cat /tmp/fork-output.log
-          if [[ "$rc" -eq 0 ]]; then
-            echo "::error::push to non-existent repo should fail"
-            exit 1
-          fi
-          # Verify the script detected the fork and chose the user image path
-          grep -q 'Fork PR detected' /tmp/fork-output.log \
-            || { echo "::error::should detect fork PR"; exit 1; }
-          grep -q 'ghcr.io/fake-user/fake-fork/' /tmp/fork-output.log \
-            || { echo "::error::image path should target user repo"; exit 1; }
+          bash .github/actions/container-prep/container-prep.sh
+          # Verify the script detected the fork
+          grep -q 'Fork PR detected' "$GITHUB_OUTPUT" \
+            && { echo "::error::fork detection should not be in GITHUB_OUTPUT"; exit 1; } \
+            || true
+          # Verify the image was pushed to upstream, not the fork
+          image=$(grep '^image=' "$GITHUB_OUTPUT" | cut -d= -f2)
+          [[ "$image" == *"${{ github.repository }}"* ]] \
+            || { echo "::error::image should target upstream repo, got: $image"; exit 1; }
+          [[ "$image" != *"fake-user/fake-fork"* ]] \
+            || { echo "::error::image should not target fork repo"; exit 1; }
+          grep -q 'build-skipped=false' "$GITHUB_OUTPUT" \
+            || { echo "::error::build should not have been skipped"; exit 1; }
 
   # ── No packages ───────────────────────────────────────────────────
   # Build with no packages at all -- should produce a working image.
