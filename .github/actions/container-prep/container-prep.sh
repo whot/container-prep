@@ -319,13 +319,11 @@ else
     echo "Force-rebuild requested -- skipping cache check"
 fi
 
-# Set the target image for building / output
+# Set the target image for building / output.
+# Always target the upstream registry for builds -- even for fork PRs
+# the GITHUB_TOKEN has write access to the upstream packages.
 if [[ -z "$image" ]]; then
-    if [[ "$is_fork_pr" == "true" ]]; then
-        image="$user_image"
-    else
-        image="$upstream_image"
-    fi
+    image="$upstream_image"
 fi
 
 # ── build if needed ──────────────────────────────────────────────────────

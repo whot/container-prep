@@ -125,24 +125,11 @@ base repo), the action automatically adjusts its behavior:
    image with the same tag, the fork PR reuses it directly.  No build needed.
 2. **Check the fork's registry** — if the upstream image doesn't exist, the action
    checks whether the fork already has a cached image.
-3. **Build and push to the fork** — if neither registry has the image, the action
-   builds it and pushes to `ghcr.io/<fork-owner>/<fork-repo>/…`.
+3. **Build and push to upstream** — if neither registry has the image, the action
+   builds it and pushes to the upstream project's registry.
 
-When the PR is merged, the resulting push to `main` triggers a normal run that
-rebuilds the image in the upstream project's registry.
-
-**Fork contributors** must supply a personal access token (PAT) with
-`packages:write` scope via the `token` input, since the default `GITHUB_TOKEN`
-does not have write access to the fork's package registry from a PR context:
-
-```yaml
-- uses: whot/gh-ci-templates/.github/actions/container-prep@main
-  with:
-    base-image: 'fedora:44'
-    tag: '2025-07-27.0'
-    packages: 'gcc meson'
-    token: ${{ secrets.CONTAINER_PAT }}   # PAT with packages:write
-```
+No special tokens or configuration are needed for fork PRs — the default
+`GITHUB_TOKEN` has write access to the upstream project's packages.
 
 ## License
 
