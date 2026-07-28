@@ -257,10 +257,15 @@ jobs:
           export GITHUB_OUTPUT
           # The build will succeed but push will fail (fake repo).
           # We only need to verify the image path is correct.
-          bash .github/actions/container-prep/container-prep.sh 2>&1 \
-            | tee /tmp/fork-output.log \
-            && { echo "::error::push to non-existent repo should fail"; exit 1; } \
-            || true
+          rc=0
+          bash .github/actions/container-prep/container-prep.sh \
+            > /tmp/fork-output.log 2>&1 \
+            || rc=$?
+          cat /tmp/fork-output.log
+          if [[ "$rc" -eq 0 ]]; then
+            echo "::error::push to non-existent repo should fail"
+            exit 1
+          fi
           # Verify the script detected the fork and chose the user image path
           grep -q 'Fork PR detected' /tmp/fork-output.log \
             || { echo "::error::should detect fork PR"; exit 1; }
