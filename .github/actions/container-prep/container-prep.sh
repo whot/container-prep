@@ -311,6 +311,10 @@ if [[ "${INPUT_FORCE_REBUILD:-false}" != "true" ]]; then
     fi
 
     endgroup
+
+    if [[ "$build_needed" != "true" ]]; then
+        echo "Image ${image} already exists -- skipping build"
+    fi
 else
     echo "Force-rebuild requested -- skipping cache check"
 fi
