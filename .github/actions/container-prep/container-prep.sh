@@ -320,8 +320,11 @@ else
 fi
 
 # Set the target image for building / output.
-# Always target the upstream registry for builds -- even for fork PRs
-# the GITHUB_TOKEN has write access to the upstream packages.
+# Always target the upstream image path.  For push events in a fork,
+# GITHUB_REPOSITORY is the fork itself so this is the fork's registry.
+# For pull_request events from a fork the GITHUB_TOKEN cannot write to
+# either registry; the expectation is that the image was already built
+# via a push event in the fork (see containers.yml pattern).
 if [[ -z "$image" ]]; then
     image="$upstream_image"
 fi
