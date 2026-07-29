@@ -25,7 +25,80 @@ the same tag the build is skipped entirely.
 This not only saves time but also ensures that future CI jobs run with exactly
 the same package set.
 
+Changing the tag will rebuild the container image for that distro/version.
+
 ### Example
+
+The recommended setup uses two workflow files: one that defines
+container tags and builds images, and one that runs the actual CI.
+
+It's an artifact of GitHub's security boundaries and it will be an effective
+requirement for most projects to structure the workflows this way.
+
+#### `.github/workflows/containers.yml`
+
+This file holds all container tags in one place. It triggers on
+`push` when the file itself changes (so fork contributors can build
+images in their fork's registry) and is callable from the CI workflow
+via `workflow_call`.
+
+```yaml
+name: Containers
+
+on:
+  push:
+    branches: ['**']
+    paths:
+      - '.github/workflows/containers.yml'
+
+  workflow_call:
+    outputs:
+      fedora-image:
+        value: ${{ jobs.fedora.outputs.image }}
+      ubuntu-image:
+        value: ${{ jobs.ubuntu.outputs.image }}
+
+permissions:
+  contents: read
+  packages: write
+
+# ── All tags in one place ──
+env:
+  FEDORA_TAG: '2025-07-27.0'        # bump when deps change
+  UBUNTU_TAG: '2025-07-27.0'
+
+jobs:
+  fedora:
+    runs-on: ubuntu-latest
+    outputs:
+      image: ${{ steps.prep.outputs.image }}
+    steps:
+      - uses: actions/checkout@v7
+      - id: prep
+        uses: whot/gh-ci-templates/.github/actions/container-prep@main
+        with:
+          base-image: 'fedora:44'
+          tag: ${{ env.FEDORA_TAG }}
+          packages: 'gcc gcc-c++ meson ninja-build'
+
+  ubuntu:
+    runs-on: ubuntu-latest
+    outputs:
+      image: ${{ steps.prep.outputs.image }}
+    steps:
+      - uses: actions/checkout@v7
+      - id: prep
+        uses: whot/gh-ci-templates/.github/actions/container-prep@main
+        with:
+          base-image: 'ubuntu:24.04'
+          tag: ${{ env.UBUNTU_TAG }}
+          packages: 'gcc libc6-dev meson ninja-build pkg-config'
+```
+
+#### `.github/workflows/ci.yml`
+
+The main CI workflow. Calls `containers.yml` for images, then runs
+the build matrix.
 
 ```yaml
 name: CI
@@ -35,47 +108,48 @@ on:
     branches: [main]
   pull_request:
 
-# The action pushes to ghcr.io, which requires write access to packages.
-permissions:
-  contents: read
-  packages: write
-
 jobs:
-  container-prep:
-    runs-on: ubuntu-latest
-    outputs:
-      image: ${{ steps.container.outputs.image }}
-    steps:
-      - uses: whot/gh-ci-templates/.github/actions/container-prep@main
-        id: container
-        with:
-          base-image: 'fedora:44'
-          tag: '2025-07-27.0'          # bump this when deps change
-          packages: 'gcc gcc-c++ meson ninja-build git python3-pip'
-          exec: |
-            pip install gcovr
-            useradd -m builder
+  containers:
+    uses: ./.github/workflows/containers.yml
+    permissions:
+      contents: read
+      packages: write
 
   build:
-    needs: container-prep
+    needs: containers
     runs-on: ubuntu-latest
-    container: ${{ needs.container-prep.outputs.image }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: fedora-44
+            image: fedora-image
+          - name: ubuntu-24.04
+            image: ubuntu-image
+    container: ${{ needs.containers.outputs[matrix.image] }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - run: |
           meson setup build
           ninja -C build
           ninja -C build test
 ```
 
+#### Why two files?
+
+Splitting the container definitions into a separate file enables
+fork PR support (see [Fork PRs](#fork-prs) below) and keeps all
+tags in one place for easy maintenance.
+
 ### How it works
 
 The distro/version/tag triplet is used to construct an image path
-in the form `ghcr.io/<owner>/<repo>/<distro>/<version>:<tag>`. 
-The action  uses `skopeo inspect` to check whether that tag already exists, if
-not it uses `buildah` to create a container from the base image,
-runs the distro-appropriate package manager to install `packages`,
-commits the image and pushes it to the registry.
+in the form `ghcr.io/<project>/<repo>/<distro>/<version>:<tag>`.
+The action  uses `skopeo inspect` to check whether that tag already exists,
+falling back to `ghcr.io/<user>/<repo>/<distro>/<version>:<tag>` (see
+[Fork PRs](#fork-prs) below). If neither image exists, `buildah` creates a
+container from the base image, runs the distro-appropriate package manager to
+install `packages`, commits the image and pushes it to the registry.
 
 ### Inputs
 
@@ -118,18 +192,48 @@ Unknown distros trigger a warning but do not fail — useful when
 
 ### Fork PRs
 
-When a pull request comes from a **fork** (i.e. the head repo differs from the
-base repo), the action automatically adjusts its behavior:
+Most projects will have a `workflow.yml` that only runs the CI
+on pull request and merges into `main`:
+```yml
+on:
+  push:
+    branches: [main]
+  pull_request:
+```
+The problem here is that in pull request from a user's forked repository
+the `GITHUB_TOKEN` cannot push images to either the upstream or the fork's
+registry. This is a GitHub security setting and cannot be circumvented (we
+can't pass secrets either so even an access token wouldn't help).
 
-1. **Check the upstream registry first** — if the upstream project already has an
-   image with the same tag, the fork PR reuses it directly.  No build needed.
-2. **Check the fork's registry** — if the upstream image doesn't exist, the action
-   checks whether the fork already has a cached image.
-3. **Build and push to upstream** — if neither registry has the image, the action
-   builds it and pushes to the upstream project's registry.
+The action handles this with a two-step cache check:
 
-No special tokens or configuration are needed for fork PRs — the default
-`GITHUB_TOKEN` has write access to the upstream project's packages.
+1. **Check the upstream registry** — if the upstream project already has
+   an image with the same tag, the fork PR reuses it directly.
+2. **Check the fork's registry** — if the upstream image doesn't exist,
+   the action checks whether the fork already has a cached image.
+
+Most fork PRs don't change the container tags, so step 1 succeeds
+and no build is needed.
+
+When a fork contributor **does** need to bump a tag (e.g. to add a new
+build dependency), the split-workflow setup handles it:
+
+1. The contributor edits `containers.yml` in their fork (bumps the tag).
+2. They push to their fork.  The `push` trigger fires because the file
+   changed, and the fork's `GITHUB_TOKEN` can write to the fork's own
+   registry — the image is built and pushed to
+   `ghcr.io/<fork-owner>/<fork-repo>/…`.
+3. The contributor opens (or updates) the PR against upstream.
+4. The upstream PR workflow calls `containers.yml` via `workflow_call`.
+   The action finds the image in the fork's registry (step 2 above)
+   and uses it.
+5. Once the PR is merged into the upstream project, the `GITHUB_TOKEN`
+   has write access to the registry and will rebuild the image. Future
+   PRs will thus use the newly merged image.
+
+**Note:** If the fork's build is still running when the upstream PR
+workflow starts, the image won't be found yet and the job will fail.
+Re-run the failed jobs once the fork's build completes.
 
 ## License
 
