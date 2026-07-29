@@ -60,6 +60,14 @@ inputs:
       that tag already exists.
     required: false
     default: 'false'
+  check-only:
+    description: >
+      Set to "true" to only check whether the image exists without
+      building it.  Outputs "build-needed" to indicate whether a
+      build would be required.  Useful for splitting check and build
+      into separate jobs for better CI visibility.
+    required: false
+    default: 'false'
 
 outputs:
   image:
@@ -68,6 +76,9 @@ outputs:
   build-skipped:
     description: '"true" if the image already existed and the build was skipped.'
     value: ${{ steps.prep.outputs.build-skipped }}
+  build-needed:
+    description: '"true" if the image needs to be built (for use with check-only).'
+    value: ${{ steps.prep.outputs.build-needed }}
 
 runs:
   using: composite
@@ -85,6 +96,7 @@ runs:
         INPUT_EXEC: ${{ inputs.exec }}
         INPUT_WORKDIR: ${{ inputs.workdir }}
         INPUT_FORCE_REBUILD: ${{ inputs.force-rebuild }}
+        INPUT_CHECK_ONLY: ${{ inputs.check-only }}
         INPUT_USER_REPO: ${{ github.event.pull_request.head.repo.full_name || '' }}
         GITHUB_REPOSITORY: ${{ github.repository }}
       run: ${{ github.action_path }}/container-prep.sh

@@ -14,6 +14,7 @@
 #   INPUT_EXEC           — shell commands to run after package installation
 #   INPUT_WORKDIR        — working directory inside the container
 #   INPUT_FORCE_REBUILD  — "true" to skip the cache check
+#   INPUT_CHECK_ONLY     — "true" to only check, don't build
 #   INPUT_USER_REPO      — for fork PRs: head repo full_name (e.g. "user/foo")
 #   GITHUB_REPOSITORY    — owner/repo (the PR target / upstream repo)
 #   GITHUB_OUTPUT        — file path for action outputs
@@ -331,6 +332,16 @@ fi
 # via a push event in the fork (see containers.yml pattern).
 if [[ -z "$image" ]]; then
     image="$upstream_image"
+fi
+
+# ── check-only mode: output results and exit ─────────────────────────────
+echo "build-needed=${build_needed}" >> "$GITHUB_OUTPUT"
+
+if [[ "${INPUT_CHECK_ONLY:-false}" == "true" ]]; then
+    echo "image=${image}" >> "$GITHUB_OUTPUT"
+    echo "build-skipped=true" >> "$GITHUB_OUTPUT"
+    echo "Check-only mode: build-needed=${build_needed}, image=${image}"
+    exit 0
 fi
 
 # ── build if needed ──────────────────────────────────────────────────────

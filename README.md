@@ -54,9 +54,7 @@ on:
   workflow_call:
     outputs:
       fedora-image:
-        value: ${{ jobs.fedora.outputs.image }}
-      ubuntu-image:
-        value: ${{ jobs.ubuntu.outputs.image }}
+        value: ${{ jobs.build-fedora.outputs.image || jobs.check-fedora.outputs.image }}
 
 permissions:
   contents: read
@@ -65,34 +63,39 @@ permissions:
 # ── All tags in one place ──
 env:
   FEDORA_TAG: '2025-07-27.0'        # bump when deps change
-  UBUNTU_TAG: '2025-07-27.0'
 
 jobs:
-  fedora:
+  # Fast check — does the image already exist?
+  check-fedora:
     runs-on: ubuntu-latest
     outputs:
-      image: ${{ steps.prep.outputs.image }}
+      image: ${{ steps.check.outputs.image }}
+      build-needed: ${{ steps.check.outputs.build-needed }}
     steps:
       - uses: actions/checkout@v7
-      - id: prep
-        uses: whot/container-prep@main
+      - id: check
+        uses: whot/gh-ci-templates@main
         with:
           base-image: 'fedora:44'
           tag: ${{ env.FEDORA_TAG }}
           packages: 'gcc gcc-c++ meson ninja-build'
+          check-only: 'true'
 
-  ubuntu:
+  # Build — only runs when the image is missing
+  build-fedora:
+    needs: check-fedora
+    if: needs.check-fedora.outputs.build-needed == 'true'
     runs-on: ubuntu-latest
     outputs:
       image: ${{ steps.prep.outputs.image }}
     steps:
       - uses: actions/checkout@v7
       - id: prep
-        uses: whot/container-prep@main
+        uses: whot/gh-ci-templates@main
         with:
-          base-image: 'ubuntu:24.04'
-          tag: ${{ env.UBUNTU_TAG }}
-          packages: 'gcc libc6-dev meson ninja-build pkg-config'
+          base-image: 'fedora:44'
+          tag: ${{ env.FEDORA_TAG }}
+          packages: 'gcc gcc-c++ meson ninja-build'
 ```
 
 #### `.github/workflows/ci.yml`
@@ -118,15 +121,7 @@ jobs:
   build:
     needs: containers
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - name: fedora-44
-            image: fedora-image
-          - name: ubuntu-24.04
-            image: ubuntu-image
-    container: ${{ needs.containers.outputs[matrix.image] }}
+    container: ${{ needs.containers.outputs.fedora-image }}
     steps:
       - uses: actions/checkout@v7
       - run: |
@@ -140,6 +135,39 @@ jobs:
 Splitting the container definitions into a separate file enables
 fork PR support (see [Fork PRs](#fork-prs) below) and keeps all
 tags in one place for easy maintenance.
+
+#### Check/build split
+
+The example uses `check-only: true` to separate image checking from
+building.  Each distro gets two jobs:
+
+- **`check-<distro>`** — always runs, takes a few seconds.  Uses
+  `check-only: true` to run `skopeo inspect` without building.
+  Outputs `build-needed` (`true`/`false`) and the `image` reference.
+- **`build-<distro>`** — conditional on
+  `needs.check-<distro>.outputs.build-needed == 'true'`.  Only runs
+  when the image is missing from the registry.
+
+The `workflow_call` outputs use a fallback expression to pick the
+image from whichever job produced it:
+
+```yaml
+outputs:
+  fedora-image:
+    value: ${{ jobs.build-fedora.outputs.image || jobs.check-fedora.outputs.image }}
+```
+
+In the GitHub Actions UI this means:
+
+- **Cached images** — the check job is green, the build job is
+  greyed out ("skipped").  The workflow finishes in seconds.
+- **Rebuild needed** — both jobs are green.  The build job is
+  clearly visible, making it obvious that a container rebuild
+  happened.
+
+This is purely cosmetic — the single-job pattern (without
+`check-only`) works identically but always shows every distro
+job as active, even on a cache hit.
 
 ### How it works
 
@@ -164,6 +192,7 @@ install `packages`, commits the image and pushes it to the registry.
 | `exec`          | no       | `''`                  | Shell commands to run inside the container after package installation|
 | `workdir`       | no       | `/github/workspace`   | Working directory inside the container                               |
 | `force-rebuild` | no       | `false`               | Set to `true` to always rebuild                                      |
+| `check-only`    | no       | `false`               | Only check if the image exists; don't build                          |
 
 ### Outputs
 
@@ -171,6 +200,7 @@ install `packages`, commits the image and pushes it to the registry.
 |-----------------|-------------|
 | `image`         | Full image reference for use in `container:` |
 | `build-skipped` | `true` if the image already existed |
+| `build-needed`  | `true` if the image needs to be built (for use with `check-only`) |
 
 ### Supported distros
 
