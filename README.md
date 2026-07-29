@@ -1,4 +1,4 @@
-# gh-ci-templates
+# container-prep
 
 Reusable GitHub Actions for CI container management — inspired by
 [freedesktop.org ci-templates](https://gitlab.freedesktop.org/freedesktop/ci-templates).
@@ -75,7 +75,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - id: prep
-        uses: whot/gh-ci-templates/.github/actions/container-prep@main
+        uses: whot/container-prep/.github/actions/container-prep@main
         with:
           base-image: 'fedora:44'
           tag: ${{ env.FEDORA_TAG }}
@@ -88,7 +88,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - id: prep
-        uses: whot/gh-ci-templates/.github/actions/container-prep@main
+        uses: whot/container-prep/.github/actions/container-prep@main
         with:
           base-image: 'ubuntu:24.04'
           tag: ${{ env.UBUNTU_TAG }}
