@@ -17,8 +17,164 @@
 #   INPUT_USER_REPO      — for fork PRs: head repo full_name (e.g. "user/foo")
 #   GITHUB_REPOSITORY    — owner/repo (the PR target / upstream repo)
 #   GITHUB_OUTPUT        — file path for action outputs
+#
 
 set -euo pipefail
+
+DRY_RUN=""
+
+function usage() {
+    set +x
+    echo "Usage: $0 [OPTIONS]"
+    echo ""
+    echo "Builds a container from the given base image."
+    echo ""
+    echo "Options:"
+    echo "   --dry-run          Build images but do not commit to the registry"
+    echo "   --verbose          Enable debugging output"
+    echo "   --force            Force a rebuild even if image exists"
+    echo ""
+    echo "Project-specific options:"
+    echo "   --tag              The image tag (required)"
+    echo "   --base-image       The container base image"
+    echo "   --packages         Space-separated list of packages to install"
+    echo "   --suffix           Image suffix"
+    echo "   --registry         Container registry to use"
+    echo "   --user             GitHub registry user name"
+    echo "   --token            GitHub personal access token value"
+    echo "   --workdir          Working directory in the built container"
+    echo "   --upstream-repo    Upstream repository project/name"
+}
+
+# Fill in defaults for local debugging
+if [[ -z "${CI:-}" ]]; then
+    USER="${USER:-$(whoami)}"
+    REPOSITORY="$(basename "$PWD")"
+    INPUT_REGISTRY="containers-storage"
+    INPUT_REGISTRY_USER="${INPUT_REGISTRY_USER:-$USER}"
+    INPUT_USER_REPO="${INPUT_USER_REPO:-${USER}/${REPOSITORY}}"
+    GITHUB_OUTPUT="${GITHUB_OUTPUT:-$(mktemp)}"
+
+    SHORT="vh"
+    LONG="help,verbose,dry-run,force,base-image:,tag:,packages:,suffix:,registry:,user:,token:,exec:,workdir:,upstream-repo:,"
+
+    ARGS=$(getopt -o "$SHORT" -l "$LONG" -- "$@")
+    if [ $? -ne 0 ]; then
+        echo "Failed to parse options." >&2
+        exit 1
+    fi
+
+    eval set -- "$ARGS"
+    while true; do
+        case "$1" in
+            -h|--help)
+                usage
+                exit 0
+                ;;
+            -v|--verbose)
+                set -x
+                shift
+                ;;
+            --dry-run)
+                DRY_RUN="true"
+                shift
+                ;;
+            --base-image)
+                INPUT_BASE_IMAGE="$2"
+                shift 2
+                ;;
+            --tag)
+                INPUT_TAG="$2"
+                shift 2
+                ;;
+            --packages)
+                INPUT_PACKAGES="$2"
+                shift 2
+                ;;
+            --suffix)
+                INPUT_SUFFIX="$2"
+                shift 2
+                ;;
+            --registry)
+                INPUT_REGISTRY="$2"
+                shift 2
+                ;;
+            --user)
+                INPUT_REGISTRY_USER="$2"
+                shift 2
+                ;;
+            --token)
+                INPUT_TOKEN="$2"
+                shift 2
+                ;;
+            --exec)
+                # Special case: if the argument is a file, use
+                # that file's content.
+                if [[ -f "$2" ]]; then
+                    INPUT_EXEC="$(cat "$2")"
+                else
+                    INPUT_EXEC="$2"
+                fi
+                shift 2
+                ;;
+            --workdir)
+                INPUT_WORKDIR="$2"
+                shift 2
+                ;;
+            --upstream-repo)
+                GITHUB_REPOSITORY="$2"
+                shift 2
+                ;;
+            --force)
+                INPUT_FORCE_REBUILD="true"
+                shift
+                ;;
+            --)
+                shift
+                break
+                ;;
+            *)
+                echo "Unknown option ($1)" >&2
+                exit 1
+                ;;
+        esac
+    done
+
+    if [[ -z "${INPUT_BASE_IMAGE:-}" ]]; then
+        source /etc/os-release
+        INPUT_BASE_IMAGE="${ID}:${VERSION_ID}"
+        echo "Defaulting to base image '${INPUT_BASE_IMAGE}'"
+    fi
+
+    if [[ -z "${GITHUB_REPOSITORY:-}" ]]; then
+        remotes=(origin github)
+        for remote in "${remotes[@]}"; do
+            url="$(git remote get-url "$remote" 2>/dev/null || true)"
+            if [[ -n "$url" ]]; then
+                # good enough...
+                url="${url##*:}"
+                project="$(dirname "$url")"
+                repo="$(basename "$url" .git)"
+                GITHUB_REPOSITORY="${project}/${repo}"
+                break
+            fi
+        done
+        if [[ -n "$GITHUB_REPOSITORY" ]]; then
+            echo "Defaulting to GitHub upstream repository '${GITHUB_REPOSITORY}'"
+        fi
+    fi
+fi
+
+# A bit of special handling for debugging using local storage
+if [[ "${INPUT_REGISTRY}" == "containers-storage" ]]; then
+    SEP=":"
+    TRANSPORT=""
+    NEEDS_LOGIN="false"
+else
+    SEP="/"
+    TRANSPORT="docker://"
+    NEEDS_LOGIN="true"
+fi
 
 # ── helpers ──────────────────────────────────────────────────────────────
 group()     { echo "::group::$1"; }
@@ -26,6 +182,35 @@ endgroup()  { echo "::endgroup::"; }
 die()       { echo "::error::$1"; exit 1; }
 
 # ── prerequisite check ────────────────────────────────────────────────────
+function check_required_env {
+    local required=(
+        "GITHUB_REPOSITORY"
+        "GITHUB_OUTPUT"
+        "INPUT_TAG"
+    )
+    local missing=()
+
+    if [[ -z "$DRY_RUN" ]] && [[ "$NEEDS_LOGIN" != "false" ]]; then
+        required+=("INPUT_TOKEN")
+    fi
+
+    set +u
+    for var in "${required[@]}"; do
+        if [[ -z "${!var}" ]]
+        then
+            missing+=( "$var" )
+        fi
+    done
+    set -u
+
+    if [[ ${#missing[@]} -gt 0 ]]
+    then
+        die "Missing environment variables: ${missing[@]}"
+    fi
+}
+
+check_required_env
+
 for tool in buildah skopeo; do
     command -v "$tool" >/dev/null || die "$tool is required but not found on this runner"
 done
@@ -65,10 +250,10 @@ fi
 
 # ── image path ───────────────────────────────────────────────────────────
 suffix="${INPUT_SUFFIX:-${distro}/${version}}"
-upstream_image="${INPUT_REGISTRY}/${GITHUB_REPOSITORY}/${suffix}:${INPUT_TAG}"
+upstream_image="${INPUT_REGISTRY}${SEP}${GITHUB_REPOSITORY}/${suffix}:${INPUT_TAG}"
 
 if [[ "$is_fork_pr" == "true" ]]; then
-    user_image="${INPUT_REGISTRY}/${INPUT_USER_REPO}/${suffix}:${INPUT_TAG}"
+    user_image="${INPUT_REGISTRY}${SEP}${INPUT_USER_REPO}/${suffix}:${INPUT_TAG}"
     echo "Upstream image: $upstream_image"
     echo "User image:     $user_image"
 else
@@ -76,17 +261,21 @@ else
 fi
 
 # ── registry login ───────────────────────────────────────────────────────
-group "Registry login"
-echo "${INPUT_TOKEN}" | buildah login \
-    --username "${INPUT_REGISTRY_USER}" \
-    --password-stdin "${INPUT_REGISTRY}"
-endgroup
+if [[ "${NEEDS_LOGIN}" == "true" ]]; then
+    group "Registry login"
+    echo "${INPUT_TOKEN}" | buildah login \
+        --username "${INPUT_REGISTRY_USER}" \
+        --password-stdin "${INPUT_REGISTRY}"
+    endgroup
+else
+    echo "Skipping registry login"
+fi
 
 # ── check whether image already exists ───────────────────────────────────
 build_needed="true"
 image=""       # will be set to the image reference we end up using
 
-if [[ "${INPUT_FORCE_REBUILD}" != "true" ]]; then
+if [[ "${INPUT_FORCE_REBUILD:-false}" != "true" ]]; then
     group "Checking for existing image"
 
     # Step 1: check the upstream registry (always)
@@ -97,11 +286,11 @@ if [[ "${INPUT_FORCE_REBUILD}" != "true" ]]; then
         inspect_args=(--no-tags --retry-times 3)
     else
         inspect_args=(--no-tags --retry-times 3
-                      --creds "${INPUT_REGISTRY_USER}:${INPUT_TOKEN}")
+                      --creds "${INPUT_REGISTRY_USER}:${INPUT_TOKEN:-}")
     fi
 
     if skopeo inspect "${inspect_args[@]}" \
-            "docker://${upstream_image}" >/dev/null 2>&1; then
+            "${TRANSPORT}${upstream_image}" >/dev/null 2>&1; then
         echo "Image ${upstream_image} already exists -- skipping build"
         image="$upstream_image"
         build_needed="false"
@@ -232,7 +421,11 @@ if [[ "$build_needed" == "true" ]]; then
     # --squash collapses all layers so that package cache cleanup
     # actually reclaims space in the final image.
     buildah commit --squash --format docker "$ctr" "$image"
-    buildah push --retry 3 "$image"
+    if [[ -z "$DRY_RUN" ]]; then
+        buildah push --retry 3 "$image"
+    else
+        echo "Not pushing image, this is a dry run"
+    fi
     endgroup
 
     echo "image=${image}" >> "$GITHUB_OUTPUT"
