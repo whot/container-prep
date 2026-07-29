@@ -75,7 +75,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - id: prep
-        uses: whot/container-prep/.github/actions/container-prep@main
+        uses: whot/container-prep@main
         with:
           base-image: 'fedora:44'
           tag: ${{ env.FEDORA_TAG }}
@@ -88,7 +88,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - id: prep
-        uses: whot/container-prep/.github/actions/container-prep@main
+        uses: whot/container-prep@main
         with:
           base-image: 'ubuntu:24.04'
           tag: ${{ env.UBUNTU_TAG }}

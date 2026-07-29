@@ -12,11 +12,9 @@ but for GitHub Actions instead of GitLab CI.
 ## Repository structure
 
 ```
+action.yml                    # Composite action definition (inputs/outputs/env)
+container-prep.sh             # Implementation (bash)
 .github/
-  actions/
-    container-prep/
-      action.yml              # Composite action definition (inputs/outputs/env)
-      container-prep.sh       # Implementation (bash)
   workflows/
     test-build.yml            # CI: matrix build across distros
     test-features.yml         # CI: feature tests (cache, exec, workdir, fork PRs, etc.)
@@ -27,7 +25,7 @@ but for GitHub Actions instead of GitLab CI.
 - The action uses `buildah` and `skopeo` (pre-installed on GitHub runners)
 - Image path: `ghcr.io/<owner>/<repo>/<distro>/<version>:<tag>`
 - Tag acts as cache key -- same tag = same image, bump tag = rebuild
-- Fork PRs auto-detect and push to the fork's registry, checking upstream first
+- Fork PRs auto-detect and check both upstream and fork registries for cached images
 - Package manager is auto-detected from the distro name in `base-image`
 
 ## Development guidelines
@@ -38,9 +36,9 @@ but for GitHub Actions instead of GitLab CI.
   with justification when necessary)
 - Test new features in `test-features.yml` as separate jobs
 - Test distro support in `test-build.yml` via the matrix
-- Tests run the action via `uses: ./.github/actions/container-prep` or
-  invoke the script directly with env vars for scenarios that can't be
-  tested through the action (e.g. fork PR simulation)
+- Tests run the action via `uses: ./` or invoke the script directly
+  with env vars for scenarios that can't be tested through the action
+  (e.g. fork PR simulation)
 
 ## Commit style
 

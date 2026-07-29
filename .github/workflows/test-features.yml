@@ -24,7 +24,7 @@ jobs:
 
       - name: First build (cold cache)
         id: first
-        uses: ./.github/actions/container-prep
+        uses: ./
         with:
           base-image: 'alpine:3.20'
           tag: 'cache-test-${{ github.sha }}'
@@ -32,7 +32,7 @@ jobs:
 
       - name: Second call (warm cache)
         id: second
-        uses: ./.github/actions/container-prep
+        uses: ./
         with:
           base-image: 'alpine:3.20'
           tag: 'cache-test-${{ github.sha }}'
@@ -57,7 +57,7 @@ jobs:
 
       - name: First build
         id: first
-        uses: ./.github/actions/container-prep
+        uses: ./
         with:
           base-image: 'alpine:3.20'
           tag: 'force-test-${{ github.sha }}'
@@ -65,7 +65,7 @@ jobs:
 
       - name: Force rebuild
         id: forced
-        uses: ./.github/actions/container-prep
+        uses: ./
         with:
           base-image: 'alpine:3.20'
           tag: 'force-test-${{ github.sha }}'
@@ -87,7 +87,7 @@ jobs:
 
       - name: Build with exec
         id: prep
-        uses: ./.github/actions/container-prep
+        uses: ./
         with:
           base-image: 'alpine:3.20'
           tag: 'exec-test-${{ github.sha }}'
@@ -114,7 +114,7 @@ jobs:
 
       - name: Build with custom workdir
         id: prep
-        uses: ./.github/actions/container-prep
+        uses: ./
         with:
           base-image: 'alpine:3.20'
           tag: 'workdir-test-${{ github.sha }}'
@@ -135,7 +135,7 @@ jobs:
 
       - name: Build with custom suffix
         id: prep
-        uses: ./.github/actions/container-prep
+        uses: ./
         with:
           base-image: 'alpine:3.20'
           tag: 'suffix-test-${{ github.sha }}'
@@ -155,7 +155,7 @@ jobs:
 
       - name: Should fail with no version tag
         id: bad
-        uses: ./.github/actions/container-prep
+        uses: ./
         continue-on-error: true
         with:
           base-image: 'fedora'
@@ -174,7 +174,7 @@ jobs:
 
       - name: Should fail with invalid tag
         id: bad
-        uses: ./.github/actions/container-prep
+        uses: ./
         continue-on-error: true
         with:
           base-image: 'alpine:3.20'
@@ -197,7 +197,7 @@ jobs:
 
       - name: Build image in upstream registry
         id: upstream
-        uses: ./.github/actions/container-prep
+        uses: ./
         with:
           base-image: 'alpine:3.20'
           tag: 'fork-up-${{ github.sha }}'
@@ -221,7 +221,7 @@ jobs:
         run: |
           GITHUB_OUTPUT="$(mktemp)"
           export GITHUB_OUTPUT
-          bash .github/actions/container-prep/container-prep.sh
+          bash container-prep.sh
           echo "build-skipped=$(grep '^build-skipped=' "$GITHUB_OUTPUT" | cut -d= -f2)" >> "$GITHUB_OUTPUT"
           # Re-parse outputs for the verification step
           cat "$GITHUB_OUTPUT"
@@ -255,7 +255,7 @@ jobs:
         run: |
           GITHUB_OUTPUT="$(mktemp)"
           export GITHUB_OUTPUT
-          bash .github/actions/container-prep/container-prep.sh
+          bash container-prep.sh
           # Verify the script detected the fork
           grep -q 'Fork PR detected' "$GITHUB_OUTPUT" \
             && { echo "::error::fork detection should not be in GITHUB_OUTPUT"; exit 1; } \
@@ -278,7 +278,7 @@ jobs:
 
       - name: Build without packages
         id: prep
-        uses: ./.github/actions/container-prep
+        uses: ./
         with:
           base-image: 'alpine:3.20'
           tag: 'nopkg-test-${{ github.sha }}'
