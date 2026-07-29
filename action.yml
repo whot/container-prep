@@ -4,6 +4,10 @@ description: >
   registry.  When the image is already present the build is skipped entirely,
   making CI pipelines faster on repeated runs.
 
+branding:
+  icon: 'box'
+  color: 'blue'
+
 inputs:
   base-image:
     description: >

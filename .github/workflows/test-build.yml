@@ -36,7 +36,7 @@ jobs:
 
       - name: Build image
         id: prep
-        uses: ./.github/actions/container-prep
+        uses: ./
         with:
           base-image: ${{ matrix.base-image }}
           tag: 'test-${{ github.sha }}'
