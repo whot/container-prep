@@ -191,6 +191,7 @@ install `packages`, commits the image and pushes it to the registry.
 | `token`         | no       | `${{ github.token }}` | Registry auth token                                                  |
 | `exec`          | no       | `''`                  | Shell commands to run inside the container after package installation|
 | `workdir`       | no       | `/github/workspace`   | Working directory inside the container                               |
+| `platform`      | no       | `''` (host platform)  | Target platform (e.g. `linux/amd64`, `linux/arm64`, `linux/386`)     |
 | `force-rebuild` | no       | `false`               | Set to `true` to always rebuild                                      |
 | `check-only`    | no       | `false`               | Only check if the image exists; don't build                          |
 
@@ -219,6 +220,30 @@ Package manager detection is automatic based on the `base-image` name:
 
 Unknown distros trigger a warning but do not fail — useful when
 `base-image` already contains everything you need.
+
+### Cross-platform builds
+
+Use the `platform` input to build images for a different architecture
+than the runner.  The value is passed directly to `buildah from
+--platform`.
+
+```yaml
+- uses: whot/gh-ci-templates@main
+  with:
+    base-image: 'debian:testing'
+    tag: '2025-07-30.0'
+    packages: 'gcc make'
+    platform: 'linux/386'
+    suffix: 'my-project-i386'
+```
+
+When `platform` is omitted the host platform is used (typically
+`linux/amd64` on GitHub-hosted runners).
+
+**Note:** Cross-platform builds require the appropriate QEMU user-mode
+emulation to be registered on the runner.  GitHub-hosted runners have
+this for common architectures; self-hosted runners may need
+`qemu-user-static` installed.
 
 ### Fork PRs
 

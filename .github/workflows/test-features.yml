@@ -326,6 +326,28 @@ jobs:
           [[ "${{ steps.check.outputs.build-skipped }}" == "true" ]] \
             || { echo "::error::build-skipped should be true in check-only"; exit 1; }
 
+  # ── Platform ────────────────────────────────────────────────────────
+  # Build with an explicit --platform and verify the image architecture.
+  platform:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Build with explicit platform
+        id: prep
+        uses: ./
+        with:
+          base-image: 'alpine:3.20'
+          tag: 'platform-test-${{ github.sha }}'
+          platform: 'linux/amd64'
+
+      - name: Verify image architecture
+        run: |
+          arch=$(podman inspect "${{ steps.prep.outputs.image }}" \
+            --format '{{.Architecture}}')
+          [[ "$arch" == "amd64" ]] \
+            || { echo "::error::expected amd64 architecture, got $arch"; exit 1; }
+
   # ── No packages ───────────────────────────────────────────────────
   # Build with no packages at all -- should produce a working image.
   no-packages:
