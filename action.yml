@@ -60,6 +60,14 @@ inputs:
       that tag already exists.
     required: false
     default: 'false'
+  platform:
+    description: >
+      Target platform for the container image (e.g. "linux/amd64",
+      "linux/arm64", "linux/386").  When set, this value is passed
+      to "buildah from --platform".  Leave empty to use the host
+      platform (the default).
+    required: false
+    default: ''
   check-only:
     description: >
       Set to "true" to only check whether the image exists without
@@ -95,6 +103,7 @@ runs:
         INPUT_TOKEN: ${{ inputs.token }}
         INPUT_EXEC: ${{ inputs.exec }}
         INPUT_WORKDIR: ${{ inputs.workdir }}
+        INPUT_PLATFORM: ${{ inputs.platform }}
         INPUT_FORCE_REBUILD: ${{ inputs.force-rebuild }}
         INPUT_CHECK_ONLY: ${{ inputs.check-only }}
         INPUT_USER_REPO: ${{ github.event.pull_request.head.repo.full_name || '' }}

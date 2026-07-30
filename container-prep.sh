@@ -22,6 +22,7 @@
 #   --user             GitHub registry user name
 #   --token            GitHub personal access token value
 #   --exec             Shell commands to run inside the container after package install
+#   --platform         Target platform (e.g. linux/amd64, linux/arm64, linux/386)
 #   --workdir          Working directory in the built container
 #   --upstream-repo    Upstream repository project/name
 #
@@ -35,6 +36,7 @@
 #   INPUT_TOKEN          — registry auth token
 #   INPUT_EXEC           — shell commands to run after package installation
 #   INPUT_WORKDIR        — working directory inside the container
+#   INPUT_PLATFORM       — target platform (e.g. "linux/amd64", "linux/386")
 #   INPUT_FORCE_REBUILD  — "true" to skip the cache check
 #   INPUT_CHECK_ONLY     — "true" to only check, don't build
 #   INPUT_USER_REPO      — for fork PRs: head repo full_name (e.g. "user/foo")
@@ -97,7 +99,7 @@ if [[ -z "${CI:-}" ]]; then
     GITHUB_OUTPUT="${GITHUB_OUTPUT:-$(mktemp)}"
 
     SHORT="vh"
-    LONG="help,verbose,dry-run,force,base-image:,tag:,packages:,suffix:,registry:,user:,token:,exec:,workdir:,upstream-repo:,"
+    LONG="help,verbose,dry-run,force,base-image:,tag:,packages:,suffix:,registry:,user:,token:,exec:,workdir:,platform:,upstream-repo:,"
 
     if ! ARGS=$(getopt -o "$SHORT" -l "$LONG" -- "$@"); then
         echo "Failed to parse options." >&2
@@ -159,6 +161,10 @@ if [[ -z "${CI:-}" ]]; then
                 ;;
             --workdir)
                 INPUT_WORKDIR="$2"
+                shift 2
+                ;;
+            --platform)
+                INPUT_PLATFORM="$2"
                 shift 2
                 ;;
             --upstream-repo)
@@ -385,7 +391,11 @@ fi
 if [[ "$build_needed" == "true" ]]; then
     group "Building container"
 
-    ctr=$(buildah from "${INPUT_BASE_IMAGE}")
+    if [[ -n "${INPUT_PLATFORM:-}" ]]; then
+        ctr=$(buildah from --platform "${INPUT_PLATFORM}" "${INPUT_BASE_IMAGE}")
+    else
+        ctr=$(buildah from "${INPUT_BASE_IMAGE}")
+    fi
     # Clean up the working container on exit (matters on self-hosted runners).
     # shellcheck disable=SC2064
     trap "buildah rm '$ctr' 2>/dev/null || true" EXIT
