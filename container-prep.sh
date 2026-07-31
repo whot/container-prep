@@ -223,7 +223,7 @@ function check_required_env {
     local missing=()
 
     if [[ -z "$DRY_RUN" ]] && [[ "$NEEDS_LOGIN" != "false" ]]; then
-        required+=("INPUT_TOKEN")
+        required+=("INPUT_TOKEN" "INPUT_REGISTRY_USER")
     fi
 
     set +u
@@ -295,7 +295,7 @@ fi
 # ── registry login ───────────────────────────────────────────────────────
 if [[ "${NEEDS_LOGIN}" == "true" ]]; then
     group "Registry login"
-    echo "${INPUT_TOKEN}" | buildah login \
+    echo "${INPUT_TOKEN:-}" | buildah login \
         --username "${INPUT_REGISTRY_USER}" \
         --password-stdin "${INPUT_REGISTRY}"
     endgroup
@@ -330,7 +330,7 @@ if [[ "${INPUT_FORCE_REBUILD:-false}" != "true" ]]; then
         # Step 2 (fork PRs only): check the user's registry
         echo "Not found upstream -- checking user registry: $user_image"
         if skopeo inspect --no-tags --retry-times 3 \
-                --creds "${INPUT_REGISTRY_USER}:${INPUT_TOKEN}" \
+                --creds "${INPUT_REGISTRY_USER}:${INPUT_TOKEN:-}" \
                 "docker://${user_image}" >/dev/null 2>&1; then
             echo "Image ${user_image} already exists -- skipping build"
             image="$user_image"
