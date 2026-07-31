@@ -1,9 +1,31 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: MIT
-# container-prep.sh — check whether a tagged container image exists in the
-# registry; if not, build it from a base image and install packages.
 #
-# Expected environment variables (set by action.yml):
+# Usage: container-prep.sh [OPTIONS]
+#
+# Check whether a tagged container image exists in the registry;
+# if not, build it from a base image and install packages.
+# This tool is typically run by the action.yml file without
+# options, using the environment variables below.
+#
+# Options:
+#   --dry-run          Build images but do not commit to the registry
+#   --verbose          Enable debugging output
+#   --force            Force a rebuild even if image exists
+#
+# Project-specific options:
+#   --tag              The image tag (required)
+#   --base-image       The container base image
+#   --packages         Space-separated list of packages to install
+#   --suffix           Image suffix
+#   --registry         Container registry to use (default: ghcr.io, use 'containers-storage' for local)
+#   --user             GitHub registry user name
+#   --token            GitHub personal access token value
+#   --exec             Shell commands to run inside the container after package install
+#   --workdir          Working directory in the built container
+#   --upstream-repo    Upstream repository project/name
+#
+# Expected environment variables (usually set by action.yml):
 #   INPUT_BASE_IMAGE     — e.g. "fedora:44", "registry.fedoraproject.org/fedora:44"
 #   INPUT_TAG            — image tag, e.g. "2025-07-27.0"
 #   INPUT_PACKAGES       — space-separated package list (may be empty)
@@ -60,25 +82,8 @@ DRY_RUN=""
 
 function usage() {
     set +x
-    echo "Usage: $0 [OPTIONS]"
-    echo ""
-    echo "Builds a container from the given base image."
-    echo ""
-    echo "Options:"
-    echo "   --dry-run          Build images but do not commit to the registry"
-    echo "   --verbose          Enable debugging output"
-    echo "   --force            Force a rebuild even if image exists"
-    echo ""
-    echo "Project-specific options:"
-    echo "   --tag              The image tag (required)"
-    echo "   --base-image       The container base image"
-    echo "   --packages         Space-separated list of packages to install"
-    echo "   --suffix           Image suffix"
-    echo "   --registry         Container registry to use (default: ghcr.io, use 'containers-storage' for local)"
-    echo "   --user             GitHub registry user name"
-    echo "   --token            GitHub personal access token value"
-    echo "   --workdir          Working directory in the built container"
-    echo "   --upstream-repo    Upstream repository project/name"
+    # Prints lines from the first bare '#' comment to the first empty line
+    sed -n -e '/^#$/,/^$/s/^#[ ]\?//p' "${BASH_SOURCE[0]}"
 }
 
 # ── local debugging ──────────────────────────────────────────────────────
