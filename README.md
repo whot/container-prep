@@ -173,7 +173,10 @@ job as active, even on a cache hit.
 
 The distro/version/tag triplet is used to construct an image path
 in the form `ghcr.io/<project>/<repo>/<distro>/<version>:<tag>`.
-The action  uses `skopeo inspect` to check whether that tag already exists,
+When `platform` is set and no explicit `suffix` is given, the
+architecture is appended automatically:
+`ghcr.io/<project>/<repo>/<distro>/<version>/<arch>:<tag>`.
+The action uses `skopeo inspect` to check whether that tag already exists,
 falling back to `ghcr.io/<user>/<repo>/<distro>/<version>:<tag>` (see
 [Fork PRs](#fork-prs) below). If neither image exists, `buildah` creates a
 container from the base image, runs the distro-appropriate package manager to
@@ -186,12 +189,12 @@ install `packages`, commits the image and pushes it to the registry.
 | `base-image`    | yes      | —                     | Base OCI image (e.g. `fedora:44`, `ubuntu:24.04`, `alpine:3.20`)     |
 | `tag`           | yes      | —                     | Image tag — bump when content should change                          |
 | `packages`      | no       | `''`                  | Space-separated packages to install                                  |
-| `suffix`        | no       | `<distro>/<version>`  | Override the image path suffix                                       |
+| `suffix`        | no       | `<distro>/<version>`  | Override the image path suffix. When `platform` is set without a `suffix`, the arch is appended automatically (e.g. `<distro>/<version>/386`). |
 | `registry`      | no       | `ghcr.io`             | Container registry                                                   |
 | `token`         | no       | `${{ github.token }}` | Registry auth token                                                  |
 | `exec`          | no       | `''`                  | Shell commands to run inside the container after package installation|
 | `workdir`       | no       | `/github/workspace`   | Working directory inside the container                               |
-| `platform`      | no       | `''` (host platform)  | Target platform (e.g. `linux/amd64`, `linux/arm64`, `linux/386`)     |
+| `platform`      | no       | `''` (host platform)  | Target platform (e.g. `linux/amd64`, `linux/arm64`, `linux/386`). When set without an explicit `suffix`, the architecture is appended to the image path (see [Cross-platform builds](#cross-platform-builds)). |
 | `force-rebuild` | no       | `false`               | Set to `true` to always rebuild                                      |
 | `check-only`    | no       | `false`               | Only check if the image exists; don't build                          |
 
@@ -234,8 +237,18 @@ than the runner.  The value is passed directly to `buildah from
     tag: '2025-07-30.0'
     packages: 'gcc make'
     platform: 'linux/386'
-    suffix: 'my-project-i386'
 ```
+
+When `platform` is set and no explicit `suffix` is provided, the
+architecture (the part after the last `/` in the platform string)
+is appended to the default image path.  For example, `debian:testing`
+with `platform: 'linux/386'` produces
+`ghcr.io/<owner>/<repo>/debian/testing/386:<tag>` instead of the
+usual `ghcr.io/<owner>/<repo>/debian/testing:<tag>`.  This ensures
+that different platforms do not collide on the same image path.
+
+If you provide an explicit `suffix`, the platform is **not** appended
+automatically — the suffix is used as-is.
 
 When `platform` is omitted the host platform is used (typically
 `linux/amd64` on GitHub-hosted runners).

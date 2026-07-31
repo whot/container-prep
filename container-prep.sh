@@ -293,7 +293,15 @@ if [[ -n "${INPUT_USER_REPO:-}" && "${INPUT_USER_REPO}" != "${GITHUB_REPOSITORY}
 fi
 
 # ── image path ───────────────────────────────────────────────────────────
-suffix="${INPUT_SUFFIX:-${distro}/${version}}"
+if [[ -z "${INPUT_SUFFIX:-}" && -n "${INPUT_PLATFORM:-}" ]]; then
+    # Append the architecture from the platform (e.g. "linux/386" → "386")
+    # to the default suffix so that different platforms produce distinct
+    # image paths.
+    platform_arch="${INPUT_PLATFORM##*/}"
+    suffix="${distro}/${version}/${platform_arch}"
+else
+    suffix="${INPUT_SUFFIX:-${distro}/${version}}"
+fi
 upstream_image="${INPUT_REGISTRY}${SEP}${GITHUB_REPOSITORY}/${suffix}:${INPUT_TAG}"
 
 if [[ "$is_fork_pr" == "true" ]]; then
