@@ -301,7 +301,7 @@ if [[ "${NEEDS_LOGIN}" == "true" ]]; then
         --password-stdin "${INPUT_REGISTRY}"
     endgroup
 else
-    echo "Skipping registry login"
+    msg yellow "Skipping registry login"
 fi
 
 # ── check whether image already exists ───────────────────────────────────
@@ -324,36 +324,36 @@ if [[ "${INPUT_FORCE_REBUILD:-false}" != "true" ]]; then
 
     if skopeo inspect "${inspect_args[@]}" \
             "${TRANSPORT}${upstream_image}" >/dev/null 2>&1; then
-        echo "Image ${upstream_image} already exists -- skipping build"
+        msg green "Image ${upstream_image} already exists -- skipping build"
         image="$upstream_image"
         build_needed="false"
     elif [[ "$is_fork_pr" == "true" ]]; then
         # Step 2 (fork PRs only): check the user's registry
-        echo "Not found upstream -- checking user registry: $user_image"
+        msg yellow "Not found upstream -- checking user registry: $user_image"
         if skopeo inspect --no-tags --retry-times 3 \
                 --creds "${INPUT_REGISTRY_USER}:${INPUT_TOKEN:-}" \
                 "docker://${user_image}" >/dev/null 2>&1; then
-            echo "Image ${user_image} already exists -- skipping build"
+            msg green "Image ${user_image} already exists -- skipping build"
             image="$user_image"
             build_needed="false"
         else
-            echo "Image not found in either registry -- will build"
+            msg yellow "Image not found in either registry -- will build"
             echo "::warning::Fork PR image not found. If you just" \
                  "pushed a tag change, your fork's CI may still be" \
                  "building the image. Re-run this workflow once your" \
                  "fork's build completes."
         fi
     else
-        echo "Image not found -- will build"
+        msg yellow "Image not found -- will build"
     fi
 
     endgroup
 
     if [[ "$build_needed" != "true" ]]; then
-        echo "Image ${image} already exists -- skipping build"
+        msg green "Image ${image} already exists -- skipping build"
     fi
 else
-    echo "Force-rebuild requested -- skipping cache check"
+    msg yellow "Force-rebuild requested -- skipping cache check"
 fi
 
 # Set the target image for building / output.
@@ -484,7 +484,7 @@ if [[ "$build_needed" == "true" ]]; then
             exit 1
         fi
     else
-        echo "Not pushing image, this is a dry run"
+        msg yellow "Not pushing image, this is a dry run"
     fi
     endgroup
 
