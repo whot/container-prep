@@ -8,7 +8,7 @@
 #   INPUT_TAG            — image tag, e.g. "2025-07-27.0"
 #   INPUT_PACKAGES       — space-separated package list (may be empty)
 #   INPUT_SUFFIX         — optional image path suffix (default: distro/version)
-#   INPUT_REGISTRY       — container registry (default: ghcr.io)
+#   INPUT_REGISTRY       — container registry (default: ghcr.io, use 'containers-storage' for local)
 #   INPUT_REGISTRY_USER  — registry login username
 #   INPUT_TOKEN          — registry auth token
 #   INPUT_EXEC           — shell commands to run after package installation
@@ -74,7 +74,7 @@ function usage() {
     echo "   --base-image       The container base image"
     echo "   --packages         Space-separated list of packages to install"
     echo "   --suffix           Image suffix"
-    echo "   --registry         Container registry to use"
+    echo "   --registry         Container registry to use (default: ghcr.io, use 'containers-storage' for local)"
     echo "   --user             GitHub registry user name"
     echo "   --token            GitHub personal access token value"
     echo "   --workdir          Working directory in the built container"
@@ -87,7 +87,6 @@ function usage() {
 if [[ -z "${CI:-}" ]]; then
     USER="${USER:-$(whoami)}"
     REPOSITORY="$(basename "$PWD")"
-    INPUT_REGISTRY="containers-storage"
     INPUT_REGISTRY_USER="${INPUT_REGISTRY_USER:-$USER}"
     INPUT_USER_REPO="${INPUT_USER_REPO:-${USER}/${REPOSITORY}}"
     GITHUB_OUTPUT="${GITHUB_OUTPUT:-$(mktemp)}"
@@ -202,6 +201,7 @@ if [[ -z "${CI:-}" ]]; then
     fi
 fi
 
+INPUT_REGISTRY="${INPUT_REGISTRY:-ghcr.io}"
 # A bit of special handling for debugging using local storage
 if [[ "${INPUT_REGISTRY}" == "containers-storage" ]]; then
     SEP=":"
