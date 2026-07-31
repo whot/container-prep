@@ -22,6 +22,40 @@
 
 set -euo pipefail
 
+# ── helpers ──────────────────────────────────────────────────────────────
+group()     { echo "::group::$1"; }
+endgroup()  { echo "::endgroup::"; }
+die()       { echo "::error::$*"; exit 1; }
+msg() {
+    local color="$1"
+    shift
+    local text="$*"
+    local reset="\033[0m"
+    local eol="\033[K"
+    local rgb
+    case "$color" in
+        pink)
+            rgb="239;177;246" # #efb1f6
+            ;;
+        blue)
+            rgb="0;215;255" # #00d7ff
+            ;;
+        green)
+            rgb="0;255;175" # #00ffaf
+            ;;
+        yellow)
+            rgb="255;215;0" # #ffd700
+            ;;
+        *)
+            die "Unsupported color '$color'"
+            ;;
+    esac
+
+    local bg="\033[48;2;${rgb}m"
+    local fg="\033[38;2;0;0;0m"
+    echo -e "${bg}${fg}${text}${eol}${reset}"
+}
+
 DRY_RUN=""
 
 function usage() {
@@ -46,6 +80,8 @@ function usage() {
     echo "   --workdir          Working directory in the built container"
     echo "   --upstream-repo    Upstream repository project/name"
 }
+
+# ── local debugging ──────────────────────────────────────────────────────
 
 # Fill in defaults for local debugging
 if [[ -z "${CI:-}" ]]; then
@@ -144,7 +180,7 @@ if [[ -z "${CI:-}" ]]; then
         # shellcheck disable=SC1091
         source /etc/os-release
         INPUT_BASE_IMAGE="${ID}:${VERSION_ID}"
-        echo "Defaulting to base image '${INPUT_BASE_IMAGE}'"
+        msg pink "Defaulting to base image '${INPUT_BASE_IMAGE}'"
     fi
 
     if [[ -z "${GITHUB_REPOSITORY:-}" ]]; then
@@ -153,7 +189,7 @@ if [[ -z "${CI:-}" ]]; then
             url="$(git remote get-url "$remote" 2>/dev/null || true)"
             if [[ -n "$url" ]]; then
                 # good enough...
-                url="${url##*:}"
+                url="${url##*://}"
                 project="$(dirname "$url")"
                 repo="$(basename "$url" .git)"
                 GITHUB_REPOSITORY="${project}/${repo}"
@@ -161,7 +197,7 @@ if [[ -z "${CI:-}" ]]; then
             fi
         done
         if [[ -n "$GITHUB_REPOSITORY" ]]; then
-            echo "Defaulting to GitHub upstream repository '${GITHUB_REPOSITORY}'"
+            msg pink "Defaulting to GitHub upstream repository '${GITHUB_REPOSITORY}'"
         fi
     fi
 fi
@@ -176,11 +212,6 @@ else
     TRANSPORT="docker://"
     NEEDS_LOGIN="true"
 fi
-
-# ── helpers ──────────────────────────────────────────────────────────────
-group()     { echo "::group::$1"; }
-endgroup()  { echo "::endgroup::"; }
-die()       { echo "::error::$1"; exit 1; }
 
 # ── prerequisite check ────────────────────────────────────────────────────
 function check_required_env {
