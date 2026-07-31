@@ -187,15 +187,16 @@ if [[ -z "${CI:-}" ]]; then
         for remote in "${remotes[@]}"; do
             url="$(git remote get-url "$remote" 2>/dev/null || true)"
             if [[ -n "$url" ]]; then
-                # good enough...
-                url="${url##*://}"
-                project="$(dirname "$url")"
+                # good enough to handle https:// and git@github.com
+                url="${url##*:}"
+                url="${url##*//}"
+                project="$(basename "$(dirname "$url")")"
                 repo="$(basename "$url" .git)"
                 GITHUB_REPOSITORY="${project}/${repo}"
                 break
             fi
         done
-        if [[ -n "$GITHUB_REPOSITORY" ]]; then
+        if [[ -n "${GITHUB_REPOSITORY:-}" ]]; then
             msg pink "Defaulting to GitHub upstream repository '${GITHUB_REPOSITORY}'"
         fi
     fi
