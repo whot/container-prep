@@ -505,13 +505,14 @@ if [[ "$build_needed" == "true" ]]; then
     buildah commit --squash --format docker "$ctr" "$image"
     if [[ -z "$DRY_RUN" ]]; then
         if ! buildah push --retry 3 "$image"; then
+            endgroup
             if [[ "$is_fork_pr" == "true" ]]; then
-                echo "::error::Push failed. Fork PRs cannot push images" \
+                die "Push failed. Fork PRs cannot push images" \
                      "to the upstream registry. Push the tag change to" \
                      "your fork first so that your fork's CI builds the" \
                      "image, then update this PR."
             fi
-            exit 1
+            die "Push to ${image} failed"
         fi
     else
         msg yellow "Not pushing image, this is a dry run"
