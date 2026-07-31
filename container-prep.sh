@@ -386,7 +386,36 @@ if [[ "$build_needed" == "true" ]]; then
     trap "buildah rm '$ctr' 2>/dev/null || true" EXIT
 
     # helper: run a command inside the container
-    crun() { buildah run "$ctr" -- "$@"; }
+    crun() {
+        if [[ "${1:-}" != "-e" ]]; then
+            buildah run "$ctr" -- "$@";
+        else
+            local -a env_args=()
+            local -a positional_args=()
+
+            while [[ $# -gt 0 ]]; do
+                case "$1" in
+                    -e)
+                        [[ $# -ge 2 ]] || die "-e requires an argument"
+                        env_args+=(-e "$2")
+                        shift 2
+                        ;;
+                    --)
+                        shift
+                        positional_args+=("$@")
+                        break
+                        ;;
+                    *)
+                        positional_args+=("$1")
+                        shift
+                        ;;
+                esac
+            done
+
+            [[ ${#positional_args[@]} -gt 0 ]] || die "crun: no command specified"
+            buildah run "${env_args[@]}" "$ctr" -- "${positional_args[@]}"
+        fi
+    }
 
     # ── package-manager detection ────────────────────────────────────
     case "$distro" in
