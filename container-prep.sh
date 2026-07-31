@@ -488,7 +488,8 @@ if [[ "$build_needed" == "true" ]]; then
     # ── run custom commands ──────────────────────────────────────────
     if [[ -n "${INPUT_EXEC:-}" ]]; then
         group "Running custom commands (exec)"
-        crun sh -c "${INPUT_EXEC}"
+        # Allow pip to work without a virtual environment during exec
+        crun -e "PIP_BREAK_SYSTEM_PACKAGES=1" sh -c "${INPUT_EXEC}"
         endgroup
     fi
 
