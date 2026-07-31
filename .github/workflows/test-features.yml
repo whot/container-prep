@@ -327,7 +327,8 @@ jobs:
             || { echo "::error::build-skipped should be true in check-only"; exit 1; }
 
   # ── Platform ────────────────────────────────────────────────────────
-  # Build with an explicit --platform and verify the image architecture.
+  # Build with an explicit --platform and verify the image architecture
+  # and that the arch is included in the image path.
   platform:
     runs-on: ubuntu-latest
     steps:
@@ -347,6 +348,37 @@ jobs:
             --format '{{.Architecture}}')
           [[ "$arch" == "amd64" ]] \
             || { echo "::error::expected amd64 architecture, got $arch"; exit 1; }
+
+      - name: Verify image path contains arch
+        run: |
+          image="${{ steps.prep.outputs.image }}"
+          [[ "$image" == *"/alpine/3.20/amd64:"* ]] \
+            || { echo "::error::image path should contain /alpine/3.20/amd64: $image"; exit 1; }
+
+  # ── Platform with explicit suffix ──────────────────────────────────
+  # When both platform and suffix are set, the suffix should be used
+  # as-is without appending the architecture.
+  platform-with-suffix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Build with platform and explicit suffix
+        id: prep
+        uses: ./
+        with:
+          base-image: 'alpine:3.20'
+          tag: 'platsuffix-test-${{ github.sha }}'
+          platform: 'linux/amd64'
+          suffix: 'custom/path'
+
+      - name: Verify suffix is used without arch appended
+        run: |
+          image="${{ steps.prep.outputs.image }}"
+          [[ "$image" == *"/custom/path:"* ]] \
+            || { echo "::error::image path should contain /custom/path: $image"; exit 1; }
+          [[ "$image" != *"/amd64:"* ]] \
+            || { echo "::error::arch should not be appended when suffix is explicit: $image"; exit 1; }
 
   # ── No packages ───────────────────────────────────────────────────
   # Build with no packages at all -- should produce a working image.
