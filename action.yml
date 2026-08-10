@@ -9,12 +9,20 @@ branding:
   color: 'blue'
 
 inputs:
+  distro:
+    description: >
+      Base OCI image distro name (e.g. "fedora", "ubuntu", "alpine").
+    required: false
+  distro-version:
+    description: >
+      Base OCI image distro version (e.g. "44", "24.04", "3.20").
+    required: false
   base-image:
     description: >
       Base OCI image to build from (e.g. "fedora:44", "ubuntu:24.04",
-      "alpine:3.20").  The distro name is extracted from this value to
-      select the right package manager.
-    required: true
+      "alpine:3.20"). Replaces the distro and distro-version
+      options if set.
+    required: false
   tag:
     description: >
       Tag for the built image.  Use a value that changes when the image
@@ -94,6 +102,8 @@ runs:
     - id: prep
       shell: bash
       env:
+        INPUT_DISTRO: ${{ inputs.distro }}
+        INPUT_DISTRO_VERSION: ${{ inputs.distro-version }}
         INPUT_BASE_IMAGE: ${{ inputs.base-image }}
         INPUT_TAG: ${{ inputs.tag }}
         INPUT_PACKAGES: ${{ inputs.packages }}

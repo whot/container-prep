@@ -19,16 +19,31 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - base-image: 'fedora:44'
+          - distro: 'fedora'
+            distro-version: '44'
             test-pkg: gcc
             test-cmd: 'gcc --version'
-          - base-image: 'ubuntu:24.04'
+          - distro: 'fedora'
+            distro-version: '44'
+            base-image: 'fedora:43'
+            test-pkg: grep
+            # base-image overrides distro-version
+            test-cmd: 'grep "VERSION_ID=43" /etc/os-release'
+          - distro: 'ubuntu'
+            distro-version: '24.04'
             test-pkg: curl
             test-cmd: 'curl --version'
-          - base-image: 'debian:bookworm'
+          - distro: ''
+            distro-version: ''
+            base-image: 'ubuntu:24.04'
+            test-pkg: grep
+            test-cmd: 'grep "VERSION_ID=\"24.04\"" /etc/os-release'
+          - distro: 'debian'
+            distro-version: 'bookworm'
             test-pkg: curl
             test-cmd: 'curl --version'
-          - base-image: 'alpine:3.20'
+          - distro: 'alpine'
+            distro-version: '3.20'
             test-pkg: curl
             test-cmd: 'curl --version'
     steps:
@@ -38,6 +53,8 @@ jobs:
         id: prep
         uses: ./
         with:
+          distro: ${{ matrix.distro }}
+          distro-version: ${{ matrix.distro-version }}
           base-image: ${{ matrix.base-image }}
           tag: 'test-${{ github.sha }}'
           packages: ${{ matrix.test-pkg }}

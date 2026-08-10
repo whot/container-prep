@@ -26,7 +26,8 @@ jobs:
         id: first
         uses: ./
         with:
-          base-image: 'alpine:3.20'
+          distro: 'alpine'
+          distro-version: '3.20'
           tag: 'cache-test-${{ github.sha }}'
           packages: 'curl'
 
@@ -34,7 +35,8 @@ jobs:
         id: second
         uses: ./
         with:
-          base-image: 'alpine:3.20'
+          distro: 'alpine'
+          distro-version: '3.20'
           tag: 'cache-test-${{ github.sha }}'
           packages: 'curl'
 
@@ -59,7 +61,8 @@ jobs:
         id: first
         uses: ./
         with:
-          base-image: 'alpine:3.20'
+          distro: 'alpine'
+          distro-version: '3.20'
           tag: 'force-test-${{ github.sha }}'
           packages: 'curl'
 
@@ -67,7 +70,8 @@ jobs:
         id: forced
         uses: ./
         with:
-          base-image: 'alpine:3.20'
+          distro: 'alpine'
+          distro-version: '3.20'
           tag: 'force-test-${{ github.sha }}'
           packages: 'curl'
           force-rebuild: 'true'
@@ -89,7 +93,8 @@ jobs:
         id: prep
         uses: ./
         with:
-          base-image: 'alpine:3.20'
+          distro: 'alpine'
+          distro-version: '3.20'
           tag: 'exec-test-${{ github.sha }}'
           exec: |
             touch /exec-marker
@@ -116,7 +121,8 @@ jobs:
         id: prep
         uses: ./
         with:
-          base-image: 'alpine:3.20'
+          distro: 'alpine'
+          distro-version: '3.20'
           tag: 'workdir-test-${{ github.sha }}'
           workdir: '/opt/myproject'
 
@@ -137,7 +143,8 @@ jobs:
         id: prep
         uses: ./
         with:
-          base-image: 'alpine:3.20'
+          distro: 'alpine'
+          distro-version: '3.20'
           tag: 'suffix-test-${{ github.sha }}'
           suffix: 'custom/path'
 
@@ -177,7 +184,8 @@ jobs:
         uses: ./
         continue-on-error: true
         with:
-          base-image: 'alpine:3.20'
+          distro: 'alpine'
+          distro-version: '3.20'
           tag: '.starts-with-dot'
 
       - name: Verify it failed
@@ -199,14 +207,16 @@ jobs:
         id: upstream
         uses: ./
         with:
-          base-image: 'alpine:3.20'
+          distro: 'alpine'
+          distro-version: '3.20'
           tag: 'fork-up-${{ github.sha }}'
           packages: 'curl'
 
       - name: Simulate fork PR (upstream hit)
         id: fork
         env:
-          INPUT_BASE_IMAGE: 'alpine:3.20'
+          INPUT_DISTRO: 'alpine'
+          INPUT_DISTRO_VERSION: '3.20'
           INPUT_TAG: 'fork-up-${{ github.sha }}'
           INPUT_PACKAGES: 'curl'
           INPUT_SUFFIX: ''
@@ -240,7 +250,8 @@ jobs:
 
       - name: Simulate fork PR (no cache, verify build targets upstream)
         env:
-          INPUT_BASE_IMAGE: 'alpine:3.20'
+          INPUT_DISTRO: 'alpine'
+          INPUT_DISTRO_VERSION: '3.20'
           INPUT_TAG: 'fork-build-${{ github.sha }}'
           INPUT_PACKAGES: ''
           INPUT_SUFFIX: ''
@@ -281,7 +292,8 @@ jobs:
         id: build
         uses: ./
         with:
-          base-image: 'alpine:3.20'
+          distro: 'alpine'
+          distro-version: '3.20'
           tag: 'check-exists-${{ github.sha }}'
           packages: 'curl'
 
@@ -315,7 +327,8 @@ jobs:
         id: check
         uses: ./
         with:
-          base-image: 'alpine:3.20'
+          distro: 'alpine'
+          distro-version: '3.20'
           tag: 'check-missing-${{ github.sha }}'
           check-only: 'true'
 
@@ -338,7 +351,8 @@ jobs:
         id: prep
         uses: ./
         with:
-          base-image: 'alpine:3.20'
+          distro: 'alpine'
+          distro-version: '3.20'
           tag: 'platform-test-${{ github.sha }}'
           platform: 'linux/amd64'
 
@@ -367,7 +381,8 @@ jobs:
         id: prep
         uses: ./
         with:
-          base-image: 'alpine:3.20'
+          distro: 'alpine'
+          distro-version: '3.20'
           tag: 'platsuffix-test-${{ github.sha }}'
           platform: 'linux/amd64'
           suffix: 'custom/path'
@@ -391,7 +406,8 @@ jobs:
         id: prep
         uses: ./
         with:
-          base-image: 'alpine:3.20'
+          distro: 'alpine'
+          distro-version: '3.20'
           tag: 'nopkg-test-${{ github.sha }}'
 
       - name: Verify image works
