@@ -76,7 +76,11 @@ jobs:
       - id: check
         uses: whot/gh-ci-templates@main
         with:
-          base-image: 'fedora:44'
+          distro: 'fedora'
+          distro-version: '44'
+          # Or alternatively use the base-image if you are using
+          # a custom base image.
+          # base-image: 'registry.somewhere.org/project/some-image'
           tag: ${{ env.FEDORA_TAG }}
           packages: 'gcc gcc-c++ meson ninja-build'
           check-only: 'true'
@@ -93,7 +97,8 @@ jobs:
       - id: prep
         uses: whot/gh-ci-templates@main
         with:
-          base-image: 'fedora:44'
+          distro: 'fedora'
+          distro-version: '44'
           tag: ${{ env.FEDORA_TAG }}
           packages: 'gcc gcc-c++ meson ninja-build'
 ```
@@ -186,8 +191,10 @@ install `packages`, commits the image and pushes it to the registry.
 
 | Input           | Required | Default               | Description                                                          |
 |-----------------|----------|-----------------------|----------------------------------------------------------------------|
-| `base-image`    | yes      | —                     | Base OCI image (e.g. `fedora:44`, `ubuntu:24.04`, `alpine:3.20`)     |
+| `distro`        | yes[^1]  | —                     | Distro component of the base OCI image (e.g. `fedora`, `ubuntu`, `alpine`) |
+| `distro-version`| yes[^1]  | —                     | Version component of the base OCI image (e.g. `44`, `24.04`, `3.20`) |
 | `tag`           | yes      | —                     | Image tag — bump when content should change                          |
+| `base-image`    | no[^1]   | —                     | Base OCI image - if set, `distro` and `distro-version` are ignored   |
 | `packages`      | no       | `''`                  | Space-separated packages to install                                  |
 | `suffix`        | no       | `<distro>/<version>`  | Override the image path suffix. When `platform` is set without a `suffix`, the arch is appended automatically (e.g. `<distro>/<version>/386`). |
 | `registry`      | no       | `ghcr.io`             | Container registry                                                   |
@@ -197,6 +204,8 @@ install `packages`, commits the image and pushes it to the registry.
 | `platform`      | no       | `''` (host platform)  | Target platform (e.g. `linux/amd64`, `linux/arm64`, `linux/386`). When set without an explicit `suffix`, the architecture is appended to the image path (see [Cross-platform builds](#cross-platform-builds)). |
 | `force-rebuild` | no       | `false`               | Set to `true` to always rebuild                                      |
 | `check-only`    | no       | `false`               | Only check if the image exists; don't build                          |
+
+[^1]: Either `distro` **and** `distro-version` **or** `base-image` are required.
 
 ### Outputs
 
