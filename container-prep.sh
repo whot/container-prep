@@ -51,9 +51,12 @@
 set -euo pipefail
 
 # ── helpers ──────────────────────────────────────────────────────────────
-group()     { echo "::group::$1"; }
-endgroup()  { echo "::endgroup::"; }
-die()       { echo "::error::$*"; exit 1; }
+group() { echo "::group::$1"; }
+endgroup() { echo "::endgroup::"; }
+die() {
+    echo "::error::$*"
+    exit 1
+}
 msg() {
     local color="$1"
     shift
@@ -62,21 +65,21 @@ msg() {
     local eol="\033[K"
     local rgb
     case "$color" in
-        pink)
-            rgb="239;177;246" # #efb1f6
-            ;;
-        blue)
-            rgb="0;215;255" # #00d7ff
-            ;;
-        green)
-            rgb="0;255;175" # #00ffaf
-            ;;
-        yellow)
-            rgb="255;215;0" # #ffd700
-            ;;
-        *)
-            die "Unsupported color '$color'"
-            ;;
+    pink)
+        rgb="239;177;246" # #efb1f6
+        ;;
+    blue)
+        rgb="0;215;255" # #00d7ff
+        ;;
+    green)
+        rgb="0;255;175" # #00ffaf
+        ;;
+    yellow)
+        rgb="255;215;0" # #ffd700
+        ;;
+    *)
+        die "Unsupported color '$color'"
+        ;;
     esac
 
     local bg="\033[48;2;${rgb}m"
@@ -113,88 +116,88 @@ if [[ -z "${CI:-}" ]]; then
     eval set -- "$ARGS"
     while true; do
         case "$1" in
-            -h|--help)
-                usage
-                exit 0
-                ;;
-            -v|--verbose)
-                set -x
-                shift
-                ;;
-            --dry-run)
-                DRY_RUN="true"
-                shift
-                ;;
-            --distro)
-                INPUT_DISTRO="$2"
-                shift 2
-                ;;
-            --distro-version)
-                INPUT_DISTRO_VERSION="$2"
-                shift 2
-                ;;
-            --base-image)
-                INPUT_BASE_IMAGE="$2"
-                shift 2
-                ;;
-            --tag)
-                INPUT_TAG="$2"
-                shift 2
-                ;;
-            --packages)
-                INPUT_PACKAGES="$2"
-                shift 2
-                ;;
-            --suffix)
-                INPUT_SUFFIX="$2"
-                shift 2
-                ;;
-            --registry)
-                INPUT_REGISTRY="$2"
-                shift 2
-                ;;
-            --user)
-                INPUT_REGISTRY_USER="$2"
-                shift 2
-                ;;
-            --token)
-                INPUT_TOKEN="$2"
-                shift 2
-                ;;
-            --exec)
-                # Special case: if the argument is a file, use
-                # that file's content.
-                if [[ -f "$2" ]]; then
-                    INPUT_EXEC="$(cat "$2")"
-                else
-                    INPUT_EXEC="$2"
-                fi
-                shift 2
-                ;;
-            --workdir)
-                INPUT_WORKDIR="$2"
-                shift 2
-                ;;
-            --platform)
-                INPUT_PLATFORM="$2"
-                shift 2
-                ;;
-            --upstream-repo)
-                GITHUB_REPOSITORY="$2"
-                shift 2
-                ;;
-            --force)
-                INPUT_FORCE_REBUILD="true"
-                shift
-                ;;
-            --)
-                shift
-                break
-                ;;
-            *)
-                echo "Unknown option ($1)" >&2
-                exit 1
-                ;;
+        -h | --help)
+            usage
+            exit 0
+            ;;
+        -v | --verbose)
+            set -x
+            shift
+            ;;
+        --dry-run)
+            DRY_RUN="true"
+            shift
+            ;;
+        --distro)
+            INPUT_DISTRO="$2"
+            shift 2
+            ;;
+        --distro-version)
+            INPUT_DISTRO_VERSION="$2"
+            shift 2
+            ;;
+        --base-image)
+            INPUT_BASE_IMAGE="$2"
+            shift 2
+            ;;
+        --tag)
+            INPUT_TAG="$2"
+            shift 2
+            ;;
+        --packages)
+            INPUT_PACKAGES="$2"
+            shift 2
+            ;;
+        --suffix)
+            INPUT_SUFFIX="$2"
+            shift 2
+            ;;
+        --registry)
+            INPUT_REGISTRY="$2"
+            shift 2
+            ;;
+        --user)
+            INPUT_REGISTRY_USER="$2"
+            shift 2
+            ;;
+        --token)
+            INPUT_TOKEN="$2"
+            shift 2
+            ;;
+        --exec)
+            # Special case: if the argument is a file, use
+            # that file's content.
+            if [[ -f "$2" ]]; then
+                INPUT_EXEC="$(cat "$2")"
+            else
+                INPUT_EXEC="$2"
+            fi
+            shift 2
+            ;;
+        --workdir)
+            INPUT_WORKDIR="$2"
+            shift 2
+            ;;
+        --platform)
+            INPUT_PLATFORM="$2"
+            shift 2
+            ;;
+        --upstream-repo)
+            GITHUB_REPOSITORY="$2"
+            shift 2
+            ;;
+        --force)
+            INPUT_FORCE_REBUILD="true"
+            shift
+            ;;
+        --)
+            shift
+            break
+            ;;
+        *)
+            echo "Unknown option ($1)" >&2
+            exit 1
+            ;;
         esac
     done
 
@@ -254,9 +257,8 @@ function check_required_env {
 
     set +u
     for var in "${required[@]}"; do
-        if [[ -z "${!var}" ]]
-        then
-            missing+=( "$var" )
+        if [[ -z "${!var}" ]]; then
+            missing+=("$var")
         fi
     done
     set -u
@@ -284,7 +286,7 @@ fi
 
 # Split the space-separated package list into an array once so we can
 # quote it properly everywhere (avoids SC2086).
-read -ra packages <<< "${INPUT_PACKAGES:-}"
+read -ra packages <<<"${INPUT_PACKAGES:-}"
 
 # ── parse distro / version from base-image ───────────────────────────────
 # Strip any registry prefix: "registry.fedoraproject.org/fedora:44" → "fedora:44"
@@ -348,7 +350,7 @@ fi
 
 # ── check whether image already exists ───────────────────────────────────
 build_needed="true"
-image=""       # will be set to the image reference we end up using
+image="" # will be set to the image reference we end up using
 
 if [[ "${INPUT_FORCE_REBUILD:-false}" != "true" ]]; then
     group "Checking for existing image"
@@ -361,11 +363,11 @@ if [[ "${INPUT_FORCE_REBUILD:-false}" != "true" ]]; then
         inspect_args=(--no-tags --retry-times 3)
     else
         inspect_args=(--no-tags --retry-times 3
-                      --creds "${INPUT_REGISTRY_USER}:${INPUT_TOKEN:-}")
+            --creds "${INPUT_REGISTRY_USER}:${INPUT_TOKEN:-}")
     fi
 
     if skopeo inspect "${inspect_args[@]}" \
-            "${TRANSPORT}${upstream_image}" >/dev/null 2>&1; then
+        "${TRANSPORT}${upstream_image}" >/dev/null 2>&1; then
         msg green "Image ${upstream_image} already exists -- skipping build"
         image="$upstream_image"
         build_needed="false"
@@ -373,17 +375,17 @@ if [[ "${INPUT_FORCE_REBUILD:-false}" != "true" ]]; then
         # Step 2 (fork PRs only): check the user's registry
         msg yellow "Not found upstream -- checking user registry: $user_image"
         if skopeo inspect --no-tags --retry-times 3 \
-                --creds "${INPUT_REGISTRY_USER}:${INPUT_TOKEN:-}" \
-                "docker://${user_image}" >/dev/null 2>&1; then
+            --creds "${INPUT_REGISTRY_USER}:${INPUT_TOKEN:-}" \
+            "docker://${user_image}" >/dev/null 2>&1; then
             msg green "Image ${user_image} already exists -- skipping build"
             image="$user_image"
             build_needed="false"
         else
             msg yellow "Image not found in either registry -- will build"
             echo "::warning::Fork PR image not found. If you just" \
-                 "pushed a tag change, your fork's CI may still be" \
-                 "building the image. Re-run this workflow once your" \
-                 "fork's build completes."
+                "pushed a tag change, your fork's CI may still be" \
+                "building the image. Re-run this workflow once your" \
+                "fork's build completes."
         fi
     else
         msg yellow "Image not found -- will build"
@@ -409,11 +411,11 @@ if [[ -z "$image" ]]; then
 fi
 
 # ── check-only mode: output results and exit ─────────────────────────────
-echo "build-needed=${build_needed}" >> "$GITHUB_OUTPUT"
+echo "build-needed=${build_needed}" >>"$GITHUB_OUTPUT"
 
 if [[ "${INPUT_CHECK_ONLY:-false}" == "true" ]]; then
-    echo "image=${image}" >> "$GITHUB_OUTPUT"
-    echo "build-skipped=true" >> "$GITHUB_OUTPUT"
+    echo "image=${image}" >>"$GITHUB_OUTPUT"
+    echo "build-skipped=true" >>"$GITHUB_OUTPUT"
     echo "Check-only mode: build-needed=${build_needed}, image=${image}"
     exit 0
 fi
@@ -434,27 +436,27 @@ if [[ "$build_needed" == "true" ]]; then
     # helper: run a command inside the container
     crun() {
         if [[ "${1:-}" != "-e" ]]; then
-            buildah run "$ctr" -- "$@";
+            buildah run "$ctr" -- "$@"
         else
             local -a env_args=()
             local -a positional_args=()
 
             while [[ $# -gt 0 ]]; do
                 case "$1" in
-                    -e)
-                        [[ $# -ge 2 ]] || die "-e requires an argument"
-                        env_args+=(-e "$2")
-                        shift 2
-                        ;;
-                    --)
-                        shift
-                        positional_args+=("$@")
-                        break
-                        ;;
-                    *)
-                        positional_args+=("$1")
-                        shift
-                        ;;
+                -e)
+                    [[ $# -ge 2 ]] || die "-e requires an argument"
+                    env_args+=(-e "$2")
+                    shift 2
+                    ;;
+                --)
+                    shift
+                    positional_args+=("$@")
+                    break
+                    ;;
+                *)
+                    positional_args+=("$1")
+                    shift
+                    ;;
                 esac
             done
 
@@ -465,69 +467,69 @@ if [[ "$build_needed" == "true" ]]; then
 
     # ── package-manager detection ────────────────────────────────────
     case "$distro" in
-        alpine)
-            crun apk update
-            crun apk upgrade
-            if [[ ${#packages[@]} -gt 0 ]]; then
-                crun apk add "${packages[@]}"
-            fi
-            crun rm -rf /var/cache/apk/*
-            ;;
-        arch*)
-            crun pacman -Syu --noconfirm
-            if [[ ${#packages[@]} -gt 0 ]]; then
-                crun pacman -S --noconfirm "${packages[@]}"
-            fi
-            crun bash -c 'mkdir -p /var/cache/pacman/pkg && pacman -S --clean --noconfirm'
-            ;;
-        centos*)
-            crun dnf upgrade -y --setopt=install_weak_deps=False
-            if [[ ${#packages[@]} -gt 0 ]]; then
-                crun dnf install -y --setopt=install_weak_deps=False "${packages[@]}"
-            fi
-            crun dnf clean all
-            ;;
-        debian|ubuntu)
-            crun bash -c "echo 'APT::Install-Recommends \"false\";' > /etc/apt/apt.conf.d/99-no-recommends"
-            crun env DEBIAN_FRONTEND=noninteractive apt-get -qq update
-            crun env DEBIAN_FRONTEND=noninteractive apt-get -qq -y dist-upgrade
-            if [[ ${#packages[@]} -gt 0 ]]; then
-                crun env DEBIAN_FRONTEND=noninteractive apt-get -qq -y install "${packages[@]}"
-            fi
-            crun env DEBIAN_FRONTEND=noninteractive apt-get -qq clean
-            ;;
-        fedora)
-            crun dnf upgrade -y --setopt=install_weak_deps=False
-            if [[ ${#packages[@]} -gt 0 ]]; then
-                crun dnf install -y --setopt=install_weak_deps=False "${packages[@]}"
-            fi
-            crun dnf clean all
-            ;;
-        opensuse*)
-            crun zypper update -y
-            if [[ ${#packages[@]} -gt 0 ]]; then
-                crun zypper install -y "${packages[@]}"
-            fi
-            crun zypper clean
-            ;;
-        rocky)
-            if [[ "$version" == 8* ]]; then
-                repo="powertools"
-            else
-                repo="crb"
-            fi
-            crun dnf upgrade -y --setopt=install_weak_deps=False
-            crun dnf install -y 'dnf-command(config-manager)'
-            crun dnf config-manager --set-enabled "$repo"
-            crun dnf install -y epel-release --setopt=install_weak_deps=False
-            if [[ ${#packages[@]} -gt 0 ]]; then
-                crun dnf install -y --setopt=install_weak_deps=False "${packages[@]}"
-            fi
-            crun dnf clean all
-            ;;
-        *)
-            echo "::warning::Unknown distro '${distro}' -- skipping package installation"
-            ;;
+    alpine)
+        crun apk update
+        crun apk upgrade
+        if [[ ${#packages[@]} -gt 0 ]]; then
+            crun apk add "${packages[@]}"
+        fi
+        crun rm -rf /var/cache/apk/*
+        ;;
+    arch*)
+        crun pacman -Syu --noconfirm
+        if [[ ${#packages[@]} -gt 0 ]]; then
+            crun pacman -S --noconfirm "${packages[@]}"
+        fi
+        crun bash -c 'mkdir -p /var/cache/pacman/pkg && pacman -S --clean --noconfirm'
+        ;;
+    centos*)
+        crun dnf upgrade -y --setopt=install_weak_deps=False
+        if [[ ${#packages[@]} -gt 0 ]]; then
+            crun dnf install -y --setopt=install_weak_deps=False "${packages[@]}"
+        fi
+        crun dnf clean all
+        ;;
+    debian | ubuntu)
+        crun bash -c "echo 'APT::Install-Recommends \"false\";' > /etc/apt/apt.conf.d/99-no-recommends"
+        crun env DEBIAN_FRONTEND=noninteractive apt-get -qq update
+        crun env DEBIAN_FRONTEND=noninteractive apt-get -qq -y dist-upgrade
+        if [[ ${#packages[@]} -gt 0 ]]; then
+            crun env DEBIAN_FRONTEND=noninteractive apt-get -qq -y install "${packages[@]}"
+        fi
+        crun env DEBIAN_FRONTEND=noninteractive apt-get -qq clean
+        ;;
+    fedora)
+        crun dnf upgrade -y --setopt=install_weak_deps=False
+        if [[ ${#packages[@]} -gt 0 ]]; then
+            crun dnf install -y --setopt=install_weak_deps=False "${packages[@]}"
+        fi
+        crun dnf clean all
+        ;;
+    opensuse*)
+        crun zypper update -y
+        if [[ ${#packages[@]} -gt 0 ]]; then
+            crun zypper install -y "${packages[@]}"
+        fi
+        crun zypper clean
+        ;;
+    rocky)
+        if [[ "$version" == 8* ]]; then
+            repo="powertools"
+        else
+            repo="crb"
+        fi
+        crun dnf upgrade -y --setopt=install_weak_deps=False
+        crun dnf install -y 'dnf-command(config-manager)'
+        crun dnf config-manager --set-enabled "$repo"
+        crun dnf install -y epel-release --setopt=install_weak_deps=False
+        if [[ ${#packages[@]} -gt 0 ]]; then
+            crun dnf install -y --setopt=install_weak_deps=False "${packages[@]}"
+        fi
+        crun dnf clean all
+        ;;
+    *)
+        echo "::warning::Unknown distro '${distro}' -- skipping package installation"
+        ;;
     esac
     endgroup
 
@@ -554,9 +556,9 @@ if [[ "$build_needed" == "true" ]]; then
             endgroup
             if [[ "$is_fork_pr" == "true" ]]; then
                 die "Push failed. Fork PRs cannot push images" \
-                     "to the upstream registry. Push the tag change to" \
-                     "your fork first so that your fork's CI builds the" \
-                     "image, then update this PR."
+                    "to the upstream registry. Push the tag change to" \
+                    "your fork first so that your fork's CI builds the" \
+                    "image, then update this PR."
             fi
             die "Push to ${image} failed"
         fi
@@ -565,9 +567,9 @@ if [[ "$build_needed" == "true" ]]; then
     fi
     endgroup
 
-    echo "image=${image}" >> "$GITHUB_OUTPUT"
-    echo "build-skipped=false" >> "$GITHUB_OUTPUT"
+    echo "image=${image}" >>"$GITHUB_OUTPUT"
+    echo "build-skipped=false" >>"$GITHUB_OUTPUT"
 else
-    echo "image=${image}" >> "$GITHUB_OUTPUT"
-    echo "build-skipped=true" >> "$GITHUB_OUTPUT"
+    echo "image=${image}" >>"$GITHUB_OUTPUT"
+    echo "build-skipped=true" >>"$GITHUB_OUTPUT"
 fi
