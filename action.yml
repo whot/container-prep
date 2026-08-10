@@ -102,20 +102,50 @@ runs:
     - id: prep
       shell: bash
       env:
-        INPUT_DISTRO: ${{ inputs.distro }}
-        INPUT_DISTRO_VERSION: ${{ inputs.distro-version }}
-        INPUT_BASE_IMAGE: ${{ inputs.base-image }}
-        INPUT_TAG: ${{ inputs.tag }}
-        INPUT_PACKAGES: ${{ inputs.packages }}
-        INPUT_SUFFIX: ${{ inputs.suffix }}
-        INPUT_REGISTRY: ${{ inputs.registry }}
-        INPUT_REGISTRY_USER: ${{ github.actor }}
-        INPUT_TOKEN: ${{ inputs.token }}
+        # exec may be multi-line, pass via env to avoid quoting issues
         INPUT_EXEC: ${{ inputs.exec }}
-        INPUT_WORKDIR: ${{ inputs.workdir }}
-        INPUT_PLATFORM: ${{ inputs.platform }}
-        INPUT_FORCE_REBUILD: ${{ inputs.force-rebuild }}
-        INPUT_CHECK_ONLY: ${{ inputs.check-only }}
-        INPUT_USER_REPO: ${{ github.event.pull_request.head.repo.full_name || '' }}
-        GITHUB_REPOSITORY: ${{ github.repository }}
-      run: ${{ github.action_path }}/container-prep.sh
+      run: |
+        args=()
+        args+=(--tag '${{ inputs.tag }}')
+        args+=(--user '${{ github.actor }}')
+        args+=(--token '${{ inputs.token }}')
+        args+=(--upstream-repo '${{ github.repository }}')
+
+        if [[ -n '${{ inputs.distro }}' ]]; then
+          args+=(--distro '${{ inputs.distro }}')
+        fi
+        if [[ -n '${{ inputs.distro-version }}' ]]; then
+          args+=(--distro-version '${{ inputs.distro-version }}')
+        fi
+        if [[ -n '${{ inputs.base-image }}' ]]; then
+          args+=(--base-image '${{ inputs.base-image }}')
+        fi
+        if [[ -n '${{ inputs.packages }}' ]]; then
+          args+=(--packages '${{ inputs.packages }}')
+        fi
+        if [[ -n '${{ inputs.suffix }}' ]]; then
+          args+=(--suffix '${{ inputs.suffix }}')
+        fi
+        if [[ -n '${{ inputs.registry }}' && '${{ inputs.registry }}' != 'ghcr.io' ]]; then
+          args+=(--registry '${{ inputs.registry }}')
+        fi
+        if [[ -n "$INPUT_EXEC" ]]; then
+          args+=(--exec "$INPUT_EXEC")
+        fi
+        if [[ -n '${{ inputs.workdir }}' && '${{ inputs.workdir }}' != '/github/workspace' ]]; then
+          args+=(--workdir '${{ inputs.workdir }}')
+        fi
+        if [[ -n '${{ inputs.platform }}' ]]; then
+          args+=(--platform '${{ inputs.platform }}')
+        fi
+        if [[ '${{ inputs.force-rebuild }}' == 'true' ]]; then
+          args+=(--force)
+        fi
+        if [[ '${{ inputs.check-only }}' == 'true' ]]; then
+          args+=(--check-only)
+        fi
+        if [[ -n '${{ github.event.pull_request.head.repo.full_name }}' ]]; then
+          args+=(--user-repo '${{ github.event.pull_request.head.repo.full_name }}')
+        fi
+
+        "${{ github.action_path }}/container-prep.sh" "${args[@]}"

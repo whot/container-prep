@@ -5,13 +5,12 @@
 #
 # Check whether a tagged container image exists in the registry;
 # if not, build it from a base image and install packages.
-# This tool is typically run by the action.yml file without
-# options, using the environment variables below.
 #
 # Options:
 #   --dry-run          Build images but do not commit to the registry
 #   --verbose          Enable debugging output
 #   --force            Force a rebuild even if image exists
+#   --check-only       Only check if the image exists; don't build
 #
 # Project-specific options:
 #   --tag             The image tag (required)
@@ -27,25 +26,10 @@
 #   --platform        Target platform (e.g. linux/amd64, linux/arm64, linux/386)
 #   --workdir         Working directory in the built container
 #   --upstream-repo   Upstream repository project/name
+#   --user-repo       Fork PR: head repo full_name (e.g. 'user/foo')
 #
-# Expected environment variables (usually set by action.yml):
-#   INPUT_DISTRO         — e.g. "fedora"
-#   INPUT_DISTRO_VERSION — e.g. "44"
-#   INPUT_BASE_IMAGE     — e.g. "fedora:44", "registry.fedoraproject.org/fedora:44"
-#   INPUT_TAG            — image tag, e.g. "2025-07-27.0"
-#   INPUT_PACKAGES       — space-separated package list (may be empty)
-#   INPUT_SUFFIX         — optional image path suffix (default: distro/version)
-#   INPUT_REGISTRY       — container registry (default: ghcr.io, use 'containers-storage' for local)
-#   INPUT_REGISTRY_USER  — registry login username
-#   INPUT_TOKEN          — registry auth token
-#   INPUT_EXEC           — shell commands to run after package installation
-#   INPUT_WORKDIR        — working directory inside the container
-#   INPUT_PLATFORM       — target platform (e.g. "linux/amd64", "linux/386")
-#   INPUT_FORCE_REBUILD  — "true" to skip the cache check
-#   INPUT_CHECK_ONLY     — "true" to only check, don't build
-#   INPUT_USER_REPO      — for fork PRs: head repo full_name (e.g. "user/foo")
-#   GITHUB_REPOSITORY    — owner/repo (the PR target / upstream repo)
-#   GITHUB_OUTPUT        — file path for action outputs
+# Environment variables:
+#   GITHUB_OUTPUT        — file path for action outputs (set by GitHub Actions)
 #
 
 set -euo pipefail
@@ -95,111 +79,120 @@ function usage() {
     sed -n -e '/^#$/,/^$/s/^#[ ]\?//p' "${BASH_SOURCE[0]}"
 }
 
-# ── local debugging ──────────────────────────────────────────────────────
+# ── argument parsing ──────────────────────────────────────────────────────
 
-# Fill in defaults for local debugging
+SHORT="vh"
+LONG="help,verbose,dry-run,force,check-only,distro:,distro-version:,base-image:,tag:,packages:,suffix:,registry:,user:,token:,exec:,workdir:,platform:,upstream-repo:,user-repo:,"
+
+if ! ARGS=$(getopt -o "$SHORT" -l "$LONG" -- "$@"); then
+    echo "Failed to parse options." >&2
+    exit 1
+fi
+
+eval set -- "$ARGS"
+while true; do
+    case "$1" in
+    -h | --help)
+        usage
+        exit 0
+        ;;
+    -v | --verbose)
+        set -x
+        shift
+        ;;
+    --dry-run)
+        DRY_RUN="true"
+        shift
+        ;;
+    --distro)
+        INPUT_DISTRO="$2"
+        shift 2
+        ;;
+    --distro-version)
+        INPUT_DISTRO_VERSION="$2"
+        shift 2
+        ;;
+    --base-image)
+        INPUT_BASE_IMAGE="$2"
+        shift 2
+        ;;
+    --tag)
+        INPUT_TAG="$2"
+        shift 2
+        ;;
+    --packages)
+        INPUT_PACKAGES="$2"
+        shift 2
+        ;;
+    --suffix)
+        INPUT_SUFFIX="$2"
+        shift 2
+        ;;
+    --registry)
+        INPUT_REGISTRY="$2"
+        shift 2
+        ;;
+    --user)
+        INPUT_REGISTRY_USER="$2"
+        shift 2
+        ;;
+    --token)
+        INPUT_TOKEN="$2"
+        shift 2
+        ;;
+    --exec)
+        # Special case: if the argument is a file, use
+        # that file's content.
+        if [[ -f "$2" ]]; then
+            INPUT_EXEC="$(cat "$2")"
+        else
+            INPUT_EXEC="$2"
+        fi
+        shift 2
+        ;;
+    --workdir)
+        INPUT_WORKDIR="$2"
+        shift 2
+        ;;
+    --platform)
+        INPUT_PLATFORM="$2"
+        shift 2
+        ;;
+    --upstream-repo)
+        GITHUB_REPOSITORY="$2"
+        shift 2
+        ;;
+    --user-repo)
+        INPUT_USER_REPO="$2"
+        shift 2
+        ;;
+    --force)
+        INPUT_FORCE_REBUILD="true"
+        shift
+        ;;
+    --check-only)
+        INPUT_CHECK_ONLY="true"
+        shift
+        ;;
+    --)
+        shift
+        break
+        ;;
+    *)
+        echo "Unknown option ($1)" >&2
+        exit 1
+        ;;
+    esac
+done
+
+# ── local defaults ───────────────────────────────────────────────────────
+# Fill in sensible defaults when running outside CI (local debugging).
 if [[ -z "${CI:-}" ]]; then
     USER="${USER:-$(whoami)}"
     REPOSITORY="$(basename "$PWD")"
     INPUT_REGISTRY_USER="${INPUT_REGISTRY_USER:-$USER}"
     INPUT_USER_REPO="${INPUT_USER_REPO:-${USER}/${REPOSITORY}}"
     GITHUB_OUTPUT="${GITHUB_OUTPUT:-$(mktemp)}"
-
-    SHORT="vh"
-    LONG="help,verbose,dry-run,force,distro:,distro-version:,base-image:,tag:,packages:,suffix:,registry:,user:,token:,exec:,workdir:,platform:,upstream-repo:,"
-
-    if ! ARGS=$(getopt -o "$SHORT" -l "$LONG" -- "$@"); then
-        echo "Failed to parse options." >&2
-        exit 1
-    fi
-
-    eval set -- "$ARGS"
-    while true; do
-        case "$1" in
-        -h | --help)
-            usage
-            exit 0
-            ;;
-        -v | --verbose)
-            set -x
-            shift
-            ;;
-        --dry-run)
-            DRY_RUN="true"
-            shift
-            ;;
-        --distro)
-            INPUT_DISTRO="$2"
-            shift 2
-            ;;
-        --distro-version)
-            INPUT_DISTRO_VERSION="$2"
-            shift 2
-            ;;
-        --base-image)
-            INPUT_BASE_IMAGE="$2"
-            shift 2
-            ;;
-        --tag)
-            INPUT_TAG="$2"
-            shift 2
-            ;;
-        --packages)
-            INPUT_PACKAGES="$2"
-            shift 2
-            ;;
-        --suffix)
-            INPUT_SUFFIX="$2"
-            shift 2
-            ;;
-        --registry)
-            INPUT_REGISTRY="$2"
-            shift 2
-            ;;
-        --user)
-            INPUT_REGISTRY_USER="$2"
-            shift 2
-            ;;
-        --token)
-            INPUT_TOKEN="$2"
-            shift 2
-            ;;
-        --exec)
-            # Special case: if the argument is a file, use
-            # that file's content.
-            if [[ -f "$2" ]]; then
-                INPUT_EXEC="$(cat "$2")"
-            else
-                INPUT_EXEC="$2"
-            fi
-            shift 2
-            ;;
-        --workdir)
-            INPUT_WORKDIR="$2"
-            shift 2
-            ;;
-        --platform)
-            INPUT_PLATFORM="$2"
-            shift 2
-            ;;
-        --upstream-repo)
-            GITHUB_REPOSITORY="$2"
-            shift 2
-            ;;
-        --force)
-            INPUT_FORCE_REBUILD="true"
-            shift
-            ;;
-        --)
-            shift
-            break
-            ;;
-        *)
-            echo "Unknown option ($1)" >&2
-            exit 1
-            ;;
-        esac
-    done
 
     if [[ -n "${INPUT_BASE_IMAGE:-}" ]]; then
         msg blue "base image set, ignoring distro:version"
