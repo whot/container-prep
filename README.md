@@ -54,7 +54,7 @@ on:
   workflow_call:
     outputs:
       fedora-image:
-        value: ${{ jobs.build-fedora.outputs.image || jobs.check-fedora.outputs.image }}
+        value: ${{ jobs.build-fedora.outputs.image }}
 
 permissions:
   contents: read
@@ -65,30 +65,7 @@ env:
   FEDORA_TAG: '2025-07-27.0'        # bump when deps change
 
 jobs:
-  # Fast check — does the image already exist?
-  check-fedora:
-    runs-on: ubuntu-latest
-    outputs:
-      image: ${{ steps.check.outputs.image }}
-      build-needed: ${{ steps.check.outputs.build-needed }}
-    steps:
-      - uses: actions/checkout@v7
-      - id: check
-        uses: whot/gh-ci-templates@main
-        with:
-          distro: 'fedora'
-          distro-version: '44'
-          # Or alternatively use the base-image if you are using
-          # a custom base image.
-          # base-image: 'registry.somewhere.org/project/some-image'
-          tag: ${{ env.FEDORA_TAG }}
-          packages: 'gcc gcc-c++ meson ninja-build'
-          check-only: 'true'
-
-  # Build — only runs when the image is missing
   build-fedora:
-    needs: check-fedora
-    if: needs.check-fedora.outputs.build-needed == 'true'
     runs-on: ubuntu-latest
     outputs:
       image: ${{ steps.prep.outputs.image }}
@@ -99,6 +76,9 @@ jobs:
         with:
           distro: 'fedora'
           distro-version: '44'
+          # Or alternatively use the base-image if you are using
+          # a custom base image.
+          # base-image: 'registry.somewhere.org/project/some-image'
           tag: ${{ env.FEDORA_TAG }}
           packages: 'gcc gcc-c++ meson ninja-build'
 ```
@@ -141,39 +121,6 @@ Splitting the container definitions into a separate file enables
 fork PR support (see [Fork PRs](#fork-prs) below) and keeps all
 tags in one place for easy maintenance.
 
-#### Check/build split
-
-The example uses `check-only: true` to separate image checking from
-building.  Each distro gets two jobs:
-
-- **`check-<distro>`** — always runs, takes a few seconds.  Uses
-  `check-only: true` to run `skopeo inspect` without building.
-  Outputs `build-needed` (`true`/`false`) and the `image` reference.
-- **`build-<distro>`** — conditional on
-  `needs.check-<distro>.outputs.build-needed == 'true'`.  Only runs
-  when the image is missing from the registry.
-
-The `workflow_call` outputs use a fallback expression to pick the
-image from whichever job produced it:
-
-```yaml
-outputs:
-  fedora-image:
-    value: ${{ jobs.build-fedora.outputs.image || jobs.check-fedora.outputs.image }}
-```
-
-In the GitHub Actions UI this means:
-
-- **Cached images** — the check job is green, the build job is
-  greyed out ("skipped").  The workflow finishes in seconds.
-- **Rebuild needed** — both jobs are green.  The build job is
-  clearly visible, making it obvious that a container rebuild
-  happened.
-
-This is purely cosmetic — the single-job pattern (without
-`check-only`) works identically but always shows every distro
-job as active, even on a cache hit.
-
 ### How it works
 
 The distro/version/tag triplet is used to construct an image path
@@ -203,7 +150,6 @@ install `packages`, commits the image and pushes it to the registry.
 | `workdir`       | no       | `/github/workspace`   | Working directory inside the container                               |
 | `platform`      | no       | `''` (host platform)  | Target platform (e.g. `linux/amd64`, `linux/arm64`, `linux/386`). When set without an explicit `suffix`, the architecture is appended to the image path (see [Cross-platform builds](#cross-platform-builds)). |
 | `force-rebuild` | no       | `false`               | Set to `true` to always rebuild                                      |
-| `check-only`    | no       | `false`               | Only check if the image exists; don't build                          |
 
 [^1]: Either `distro` **and** `distro-version` **or** `base-image` are required.
 
@@ -213,7 +159,6 @@ install `packages`, commits the image and pushes it to the registry.
 |-----------------|-------------|
 | `image`         | Full image reference for use in `container:` |
 | `build-skipped` | `true` if the image already existed |
-| `build-needed`  | `true` if the image needs to be built (for use with `check-only`) |
 
 ### Supported distros
 

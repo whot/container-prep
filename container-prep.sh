@@ -10,7 +10,6 @@
 #   --dry-run          Build images but do not commit to the registry
 #   --verbose          Enable debugging output
 #   --force            Force a rebuild even if image exists
-#   --check-only       Only check if the image exists; don't build
 #
 # Project-specific options:
 #   --tag             The image tag (required)
@@ -82,7 +81,7 @@ function usage() {
 # ── argument parsing ──────────────────────────────────────────────────────
 
 SHORT="vh"
-LONG="help,verbose,dry-run,force,check-only,distro:,distro-version:,base-image:,tag:,packages:,suffix:,registry:,user:,token:,exec:,workdir:,platform:,upstream-repo:,user-repo:,"
+LONG="help,verbose,dry-run,force,distro:,distro-version:,base-image:,tag:,packages:,suffix:,registry:,user:,token:,exec:,workdir:,platform:,upstream-repo:,user-repo:,"
 
 if ! ARGS=$(getopt -o "$SHORT" -l "$LONG" -- "$@"); then
     echo "Failed to parse options." >&2
@@ -168,10 +167,6 @@ while true; do
         ;;
     --force)
         INPUT_FORCE_REBUILD="true"
-        shift
-        ;;
-    --check-only)
-        INPUT_CHECK_ONLY="true"
         shift
         ;;
     --)
@@ -401,16 +396,6 @@ fi
 # via a push event in the fork (see containers.yml pattern).
 if [[ -z "$image" ]]; then
     image="$upstream_image"
-fi
-
-# ── check-only mode: output results and exit ─────────────────────────────
-echo "build-needed=${build_needed}" >>"$GITHUB_OUTPUT"
-
-if [[ "${INPUT_CHECK_ONLY:-false}" == "true" ]]; then
-    echo "image=${image}" >>"$GITHUB_OUTPUT"
-    echo "build-skipped=true" >>"$GITHUB_OUTPUT"
-    echo "Check-only mode: build-needed=${build_needed}, image=${image}"
-    exit 0
 fi
 
 # ── build if needed ──────────────────────────────────────────────────────
