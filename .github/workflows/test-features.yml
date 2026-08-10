@@ -267,65 +267,6 @@ jobs:
           grep -q 'build-skipped=false' "$GITHUB_OUTPUT" \
             || { echo "::error::build should not have been skipped"; exit 1; }
 
-  # ── Check-only: image exists ────────────────────────────────────
-  # Build an image, then run check-only. Should find the image
-  # and report build-needed=false.
-  check-only-exists:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-
-      - name: Build image first
-        id: build
-        uses: ./
-        with:
-          distro: 'alpine'
-          distro-version: '3.20'
-          tag: 'check-exists-${{ github.sha }}'
-          packages: 'curl'
-
-      - name: Check-only (should find it)
-        id: check
-        uses: ./
-        with:
-          base-image: 'alpine:3.20'
-          tag: 'check-exists-${{ github.sha }}'
-          packages: 'curl'
-          check-only: 'true'
-
-      - name: Verify check-only results
-        run: |
-          [[ "${{ steps.check.outputs.build-needed }}" == "false" ]] \
-            || { echo "::error::build-needed should be false"; exit 1; }
-          [[ "${{ steps.check.outputs.build-skipped }}" == "true" ]] \
-            || { echo "::error::build-skipped should be true"; exit 1; }
-          [[ "${{ steps.check.outputs.image }}" == "${{ steps.build.outputs.image }}" ]] \
-            || { echo "::error::image should match the built image"; exit 1; }
-
-  # ── Check-only: image missing ──────────────────────────────────
-  # Run check-only for a tag that doesn't exist. Should report
-  # build-needed=true without actually building.
-  check-only-missing:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-
-      - name: Check-only (should not find it)
-        id: check
-        uses: ./
-        with:
-          distro: 'alpine'
-          distro-version: '3.20'
-          tag: 'check-missing-${{ github.sha }}'
-          check-only: 'true'
-
-      - name: Verify check-only results
-        run: |
-          [[ "${{ steps.check.outputs.build-needed }}" == "true" ]] \
-            || { echo "::error::build-needed should be true"; exit 1; }
-          [[ "${{ steps.check.outputs.build-skipped }}" == "true" ]] \
-            || { echo "::error::build-skipped should be true in check-only"; exit 1; }
-
   # ── Platform ────────────────────────────────────────────────────────
   # Build with an explicit --platform and verify the image architecture
   # and that the arch is included in the image path.

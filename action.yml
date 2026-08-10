@@ -76,15 +76,6 @@ inputs:
       platform (the default).
     required: false
     default: ''
-  check-only:
-    description: >
-      Set to "true" to only check whether the image exists without
-      building it.  Outputs "build-needed" to indicate whether a
-      build would be required.  Useful for splitting check and build
-      into separate jobs for better CI visibility.
-    required: false
-    default: 'false'
-
 outputs:
   image:
     description: 'Full image reference (registry/path:tag) for downstream jobs.'
@@ -92,9 +83,6 @@ outputs:
   build-skipped:
     description: '"true" if the image already existed and the build was skipped.'
     value: ${{ steps.prep.outputs.build-skipped }}
-  build-needed:
-    description: '"true" if the image needs to be built (for use with check-only).'
-    value: ${{ steps.prep.outputs.build-needed }}
 
 runs:
   using: composite
@@ -104,6 +92,7 @@ runs:
       env:
         # exec may be multi-line, pass via env to avoid quoting issues
         INPUT_EXEC: ${{ inputs.exec }}
+
       run: |
         args=()
         args+=(--tag '${{ inputs.tag }}')
@@ -140,9 +129,6 @@ runs:
         fi
         if [[ '${{ inputs.force-rebuild }}' == 'true' ]]; then
           args+=(--force)
-        fi
-        if [[ '${{ inputs.check-only }}' == 'true' ]]; then
-          args+=(--check-only)
         fi
         if [[ -n '${{ github.event.pull_request.head.repo.full_name }}' ]]; then
           args+=(--user-repo '${{ github.event.pull_request.head.repo.full_name }}')
