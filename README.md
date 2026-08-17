@@ -31,9 +31,10 @@ Changing the tag will rebuild the container image for that distro/version.
 
 The recommended setup uses two workflow files: one that defines
 container tags and builds images, and one that runs the actual CI.
-
-It's an artifact of GitHub's security boundaries and it will be an effective
-requirement for most projects to structure the workflows this way.
+This split workflow is an artifact of GitHub's security boundaries (job
+tokens in a pull request cannot write to the upstream project's registry) and
+it thus effectively a requirement for most projects to structure the workflows
+this way.
 
 #### `.github/workflows/containers.yml`
 
@@ -83,10 +84,13 @@ jobs:
           packages: 'gcc gcc-c++ meson ninja-build'
 ```
 
+Whether all images share the same tag or whether tags are per-container
+is up to the project.
+
 #### `.github/workflows/ci.yml`
 
 The main CI workflow. Calls `containers.yml` for images, then runs
-the build matrix.
+the build job(s).
 
 ```yaml
 name: CI
@@ -117,9 +121,14 @@ jobs:
 
 #### Why two files?
 
-Splitting the container definitions into a separate file enables
-fork PR support (see [Fork PRs](#fork-prs) below) and keeps all
-tags in one place for easy maintenance.
+As already mentioned above, this is effectively a requirement
+due to permission restrictions of the GitHub job tokens. We need
+one workflow to run during `push` (to build containers and push them to the
+registry) and one workflow to run during `pull` (the actual CI, using the
+containers).
+
+Projects that run `on` triggers for `push` (rather than `merge_request`)
+do not need this split, containers can be built as part of the normal pipeline.
 
 ### How it works
 
@@ -151,14 +160,14 @@ install `packages`, commits the image and pushes it to the registry.
 | `platform`      | no       | `''` (host platform)  | Target platform (e.g. `linux/amd64`, `linux/arm64`, `linux/386`). When set without an explicit `suffix`, the architecture is appended to the image path (see [Cross-platform builds](#cross-platform-builds)). |
 | `force-rebuild` | no       | `false`               | Set to `true` to always rebuild                                      |
 
-[^1]: Either `distro` **and** `distro-version` **or** `base-image` are required.
+[^1]: Either (`distro` **and** `distro-version`) **or** `base-image` are required.
 
 ### Outputs
 
-| Output          | Description |
-|-----------------|-------------|
+| Output          | Description                                  |
+|-----------------|----------------------------------------------|
 | `image`         | Full image reference for use in `container:` |
-| `build-skipped` | `true` if the image already existed |
+| `build-skipped` | `true` if the image already existed          |
 
 ### Supported distros
 
@@ -181,13 +190,13 @@ Unknown distros trigger a warning but do not fail — useful when
 ### Cross-platform builds
 
 Use the `platform` input to build images for a different architecture
-than the runner.  The value is passed directly to `buildah from
---platform`.
+than the runner. The value is passed directly to `buildah from --platform`.
 
 ```yaml
 - uses: whot/gh-ci-templates@main
   with:
-    base-image: 'debian:testing'
+    distro: 'debian'
+    distro-version: 'testing'
     tag: '2025-07-30.0'
     packages: 'gcc make'
     platform: 'linux/386'
