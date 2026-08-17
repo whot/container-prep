@@ -110,6 +110,43 @@ jobs:
           [[ "$got" == "hello from exec" ]] \
             || { echo "::error::unexpected exec output: $got"; exit 1; }
 
+  # ── exec: repo checkout available ────────────────────────────────
+  # Verify that the repository checkout is the working directory
+  # during exec and that the checkout is cleaned up afterwards.
+  exec-repo:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Build with exec that reads repo files
+        id: prep
+        uses: ./
+        with:
+          distro: 'alpine'
+          distro-version: '3.20'
+          tag: 'execrepo-test-${{ github.sha }}'
+          exec: |
+            test -f action.yml
+            test -f container-prep.sh
+            cp action.yml /repo-marker.yml
+
+      - name: Verify exec could read repo files
+        run: |
+          podman run --rm "${{ steps.prep.outputs.image }}" \
+            test -f /repo-marker.yml \
+            || { echo "::error::/repo-marker.yml not found"; exit 1; }
+
+      - name: Verify checkout was cleaned up
+        run: |
+          # The repo copy should not exist in the final image.
+          # The exact location is an implementation detail, but
+          # action.yml must not be reachable at the container workdir.
+          rc=0
+          podman run --rm "${{ steps.prep.outputs.image }}" \
+            test -f action.yml 2>/dev/null || rc=$?
+          [[ "$rc" -ne 0 ]] \
+            || { echo "::error::repo checkout should have been removed"; exit 1; }
+
   # ── workdir ────────────────────────────────────────────────────────
   # Build with a custom workdir and verify it took effect.
   workdir:

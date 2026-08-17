@@ -141,7 +141,9 @@ The action uses `skopeo inspect` to check whether that tag already exists,
 falling back to `ghcr.io/<user>/<repo>/<distro>/<version>:<tag>` (see
 [Fork PRs](#fork-prs) below). If neither image exists, `buildah` creates a
 container from the base image, runs the distro-appropriate package manager to
-install `packages`, commits the image and pushes it to the registry.
+install `packages`, runs the `exec` commands (with a copy of the repository
+checkout as the working directory), then commits the image and pushes it to
+the registry.
 
 ### Inputs
 
@@ -155,7 +157,7 @@ install `packages`, commits the image and pushes it to the registry.
 | `suffix`        | no       | `<distro>/<version>`  | Override the image path suffix. When `platform` is set without a `suffix`, the arch is appended automatically (e.g. `<distro>/<version>/386`). |
 | `registry`      | no       | `ghcr.io`             | Container registry                                                   |
 | `token`         | no       | `${{ github.token }}` | Registry auth token                                                  |
-| `exec`          | no       | `''`                  | Shell commands to run inside the container after package installation|
+| `exec`          | no       | `''`                  | Shell commands to run inside the container after package installation (see [exec](#exec)) |
 | `workdir`       | no       | `/github/workspace`   | Working directory inside the container                               |
 | `platform`      | no       | `''` (host platform)  | Target platform (e.g. `linux/amd64`, `linux/arm64`, `linux/386`). When set without an explicit `suffix`, the architecture is appended to the image path (see [Cross-platform builds](#cross-platform-builds)). |
 | `force-rebuild` | no       | `false`               | Set to `true` to always rebuild                                      |
@@ -186,6 +188,27 @@ Package manager detection is automatic based on the `base-image` name:
 
 Unknown distros trigger a warning but do not fail — useful when
 `base-image` already contains everything you need.
+
+### exec
+
+The `exec` input runs shell commands inside the container after packages
+are installed. The working directory is set to a copy of the repository
+checkout, so exec scripts can reference repository files directly:
+
+```yaml
+- uses: whot/gh-ci-templates@main
+  with:
+    distro: 'fedora'
+    distro-version: '44'
+    tag: '2025-08-17.0'
+    packages: 'python3-pip'
+    exec: |
+      pip install -r requirements.txt
+      bash .ci/setup-custom-deps.sh
+```
+
+The repository copy is removed after exec completes so it does not end
+up in the final image.
 
 ### Cross-platform builds
 
