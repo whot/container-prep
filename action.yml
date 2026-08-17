@@ -53,9 +53,9 @@ inputs:
     description: >
       Shell commands to run inside the container after packages are
       installed (e.g. "pip install meson" or a multi-line script).
-      The repository is NOT available inside the container at build
-      time; use this for commands that only need the base image and
-      installed packages.
+      The working directory is set to a copy of the repository
+      checkout; the copy is removed after exec completes so it
+      does not end up in the final image.
     required: false
     default: ''
   workdir:

@@ -514,8 +514,25 @@ if [[ "$build_needed" == "true" ]]; then
     # ── run custom commands ──────────────────────────────────────────
     if [[ -n "${INPUT_EXEC:-}" ]]; then
         group "Running custom commands (exec)"
+
+        # If the repository has been checked out, copy it into the
+        # container and set it as the working directory.
+        repo_copied="false"
+        repo_dir="${GITHUB_WORKSPACE:-.}"
+        if [[ -d "$repo_dir/.git" ]]; then
+            buildah copy "$ctr" "$repo_dir" /tmp/clone
+            buildah config --workingdir /tmp/clone "$ctr"
+            repo_copied="true"
+        fi
+
         # Allow pip to work without a virtual environment during exec
-        crun -e "PIP_BREAK_SYSTEM_PACKAGES=1" sh -c "${INPUT_EXEC}"
+        crun -e "PIP_BREAK_SYSTEM_PACKAGES=1" \
+            sh -c "set -eux; ${INPUT_EXEC}"
+
+        if [[ "$repo_copied" == "true" ]]; then
+            crun rm -rf /tmp/clone
+            buildah config --workingdir / "$ctr"
+        fi
         endgroup
     fi
 
