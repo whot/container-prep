@@ -3,8 +3,14 @@
 #
 # Usage: container-prep.sh [OPTIONS]
 #
+# Examples:
+#   $ container-prep.sh --distro fedora --distro-version 44 --tag foo
+#   $ container-prep.sh --base-image fedora:44 --tag foo
+#
 # Check whether a tagged container image exists in the registry;
 # if not, build it from a base image and install packages.
+#
+# The image is identified by a distro, distro-version and tag tuple.
 #
 # Options:
 #   --dry-run          Build images but do not commit to the registry
@@ -12,20 +18,22 @@
 #   --force            Force a rebuild even if image exists
 #
 # Project-specific options:
-#   --tag             The image tag (required)
+#   --registry        Container registry to use (default: ghcr.io, use 'containers-storage' for local)
+#   --token           GitHub personal access token value
+#   --upstream-repo   Upstream repository project/name
+#   --user            GitHub registry user name
+#   --user-repo       Fork PR: head repo full_name (e.g. 'user/foo')
+#
+# Image building options:
+#   --base-image      The container base image (
 #   --distro          The base image's distro name (e.g. 'fedora')
 #   --distro-version  The base image's distro version (e.g. '44')
-#   --base-image      The container base image
-#   --packages        Space-separated list of packages to install
-#   --suffix          Image suffix
-#   --registry        Container registry to use (default: ghcr.io, use 'containers-storage' for local)
-#   --user            GitHub registry user name
-#   --token           GitHub personal access token value
 #   --exec            Shell commands to run inside the container after package install
+#   --packages        Space-separated list of packages to install
 #   --platform        Target platform (e.g. linux/amd64, linux/arm64, linux/386)
+#   --suffix          Image suffix
+#   --tag             The image tag (required)
 #   --workdir         Working directory in the built container
-#   --upstream-repo   Upstream repository project/name
-#   --user-repo       Fork PR: head repo full_name (e.g. 'user/foo')
 #
 # Environment variables:
 #   GITHUB_OUTPUT        — file path for action outputs (set by GitHub Actions)
