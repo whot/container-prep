@@ -525,10 +525,28 @@ if [[ "$build_needed" == "true" ]]; then
             repo_copied="true"
         fi
 
-        # Allow pip to work without a virtual environment during exec
-        crun -e "PIP_BREAK_SYSTEM_PACKAGES=1" \
-            sh -c "set -eux; ${INPUT_EXEC}"
+        # Forward the host environment into the container so that
+        # CI variables (GITHUB_*, workflow env, etc.) are available
+        # in exec scripts.  PATH is excluded so the container keeps
+        # its own (e.g. Alpine needs /sbin, Fedora doesn't).
+        # This mirrors the ci-templates approach.
+        env_file=$(mktemp)
+        export -p >"$env_file"
+        sed -i '/^declare -x PATH=/d' "$env_file"
+        chmod a+r "$env_file"
 
+        # bind-mount via -v "$env_file:/.env_file:ro" doesn't work (Permission Denied)
+        # but I don't have the time to debug this right now
+        buildah copy "$ctr" "$env_file" /tmp/.env
+        # Allow pip to work without a virtual environment during exec
+        buildah run \
+            -e "PIP_BREAK_SYSTEM_PACKAGES=1" \
+            "$ctr" -- \
+            sh -c ". /tmp/.env; set -eux; ${INPUT_EXEC}"
+        buildah run "$ctr" -- rm -f /tmp/.env
+        rm -f "$env_file"
+
+        # Clean up the repo copy and reset the working directory.
         if [[ "$repo_copied" == "true" ]]; then
             crun rm -rf /tmp/clone
             buildah config --workingdir / "$ctr"

@@ -210,6 +210,15 @@ checkout, so exec scripts can reference repository files directly:
 The repository copy is removed after exec completes so it does not end
 up in the final image.
 
+Host environment variables are forwarded into the container during
+exec, so CI variables (`GITHUB_SHA`, `GITHUB_REF`, workflow `env`
+values, etc.) are available to exec scripts.  `PATH` is excluded so
+the container keeps its own.
+
+This mirrors [freedesktop ci-templates](https://gitlab.freedesktop.org/freedesktop/ci-templates)'
+`FDO_DISTRIBUTION_EXEC`, which also makes the repository and host
+environment available during container setup.
+
 ### Cross-platform builds
 
 Use the `platform` input to build images for a different architecture
