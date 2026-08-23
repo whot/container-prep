@@ -394,6 +394,76 @@ jobs:
           [[ "$image" != *"/amd64:"* ]] \
             || { echo "::error::arch should not be appended when suffix is explicit: $image"; exit 1; }
 
+  # ── Dockerfile ──────────────────────────────────────────────────
+  # Build from a Dockerfile instead of the package-install flow.
+  dockerfile:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Create test Dockerfile
+        run: |
+          cat > Dockerfile.test <<'EOF'
+          FROM alpine:3.20
+          RUN apk add --no-cache curl
+          RUN touch /dockerfile-marker
+          EOF
+
+      - name: Build with Dockerfile
+        id: prep
+        uses: ./
+        with:
+          dockerfile: 'Dockerfile.test'
+          tag: 'dockerfile-test-${{ github.sha }}'
+
+      - name: Verify marker file exists
+        run: |
+          podman run --rm "${{ steps.prep.outputs.image }}" \
+            test -f /dockerfile-marker \
+            || { echo "::error::/dockerfile-marker not found"; exit 1; }
+
+      - name: Verify curl is installed
+        run: |
+          podman run --rm "${{ steps.prep.outputs.image }}" \
+            curl --version \
+            || { echo "::error::curl not found in image"; exit 1; }
+
+      - name: Verify image path contains distro from FROM line
+        run: |
+          image="${{ steps.prep.outputs.image }}"
+          [[ "$image" == *"/alpine/3.20:"* ]] \
+            || { echo "::error::image path should contain /alpine/3.20: $image"; exit 1; }
+
+  # ── Dockerfile with distro override ────────────────────────────────
+  # Build from a Dockerfile but override the distro/version used in
+  # the image path.
+  dockerfile-distro-override:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Create test Dockerfile
+        run: |
+          cat > Dockerfile.test <<'EOF'
+          FROM alpine:3.20
+          RUN touch /override-marker
+          EOF
+
+      - name: Build with Dockerfile and distro override
+        id: prep
+        uses: ./
+        with:
+          dockerfile: 'Dockerfile.test'
+          distro: 'myimage'
+          distro-version: '1.0'
+          tag: 'df-override-test-${{ github.sha }}'
+
+      - name: Verify image path uses overridden distro
+        run: |
+          image="${{ steps.prep.outputs.image }}"
+          [[ "$image" == *"/myimage/1.0:"* ]] \
+            || { echo "::error::image path should contain /myimage/1.0: $image"; exit 1; }
+
   # ── No packages ───────────────────────────────────────────────────
   # Build with no packages at all -- should produce a working image.
   no-packages:

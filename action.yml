@@ -68,6 +68,16 @@ inputs:
       that tag already exists.
     required: false
     default: 'false'
+  dockerfile:
+    description: >
+      Path to a Dockerfile to use for the image build.  When set,
+      the image is built with "buildah bud" using this Dockerfile
+      instead of the automatic package-install flow.  Cannot be
+      combined with packages, exec, base-image, or workdir.
+      Distro and version are extracted from the first FROM line
+      unless overridden with distro/distro-version.
+    required: false
+    default: ''
   platform:
     description: >
       Target platform for the container image (e.g. "linux/amd64",
@@ -123,6 +133,9 @@ runs:
         fi
         if [[ -n '${{ inputs.workdir }}' && '${{ inputs.workdir }}' != '/github/workspace' ]]; then
           args+=(--workdir '${{ inputs.workdir }}')
+        fi
+        if [[ -n '${{ inputs.dockerfile }}' ]]; then
+          args+=(--dockerfile '${{ inputs.dockerfile }}')
         fi
         if [[ -n '${{ inputs.platform }}' ]]; then
           args+=(--platform '${{ inputs.platform }}')

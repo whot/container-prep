@@ -6,6 +6,7 @@
 # Examples:
 #   $ container-prep.sh --distro fedora --distro-version 44 --tag foo
 #   $ container-prep.sh --base-image fedora:44 --tag foo
+#   $ container-prep.sh --dockerfile Dockerfile --tag foo
 #
 # Check whether a tagged container image exists in the registry;
 # if not, build it from a base image and install packages.
@@ -34,6 +35,17 @@
 #   --suffix          Image suffix
 #   --tag             The image tag (required)
 #   --workdir         Working directory in the built container
+#
+# Dockerfile-based options:
+#   --distro          Optional image's distro name (e.g. 'fedora'), overrides
+#                     the distribution extracted from the first FROM in the Dockerfile.
+#   --distro-version  Optional image's distro version (e.g. '44'), overrides
+#                     the version extracted from the first FROM in the Dockerfile
+#   --dockerfile      The name of the dockerfile to use
+#   --platform        Target platform (e.g. linux/amd64, linux/arm64, linux/386). If
+#                     the Dockerfile specifies --platform in the FROM line,
+#                     this option is ignored.
+#   --tag             The image tag (required)
 #
 # Environment variables:
 #   GITHUB_OUTPUT        — file path for action outputs (set by GitHub Actions)
@@ -89,7 +101,7 @@ function usage() {
 # ── argument parsing ──────────────────────────────────────────────────────
 
 SHORT="vh"
-LONG="help,verbose,dry-run,force,distro:,distro-version:,base-image:,tag:,packages:,suffix:,registry:,user:,token:,exec:,workdir:,platform:,upstream-repo:,user-repo:,"
+LONG="help,verbose,dry-run,force,distro:,distro-version:,base-image:,tag:,packages:,suffix:,registry:,user:,token:,exec:,workdir:,platform:,upstream-repo:,user-repo:,dockerfile:,"
 
 if ! ARGS=$(getopt -o "$SHORT" -l "$LONG" -- "$@"); then
     echo "Failed to parse options." >&2
@@ -173,6 +185,10 @@ while true; do
         INPUT_USER_REPO="$2"
         shift 2
         ;;
+    --dockerfile)
+        INPUT_DOCKERFILE="$2"
+        shift 2
+        ;;
     --force)
         INPUT_FORCE_REBUILD="true"
         shift
@@ -197,7 +213,9 @@ if [[ -z "${CI:-}" ]]; then
     INPUT_USER_REPO="${INPUT_USER_REPO:-${USER}/${REPOSITORY}}"
     GITHUB_OUTPUT="${GITHUB_OUTPUT:-$(mktemp)}"
 
-    if [[ -n "${INPUT_BASE_IMAGE:-}" ]]; then
+    if [[ -n "${INPUT_DOCKERFILE:-}" ]]; then
+        msg blue "Dockerfile mode, skipping base image defaults"
+    elif [[ -n "${INPUT_BASE_IMAGE:-}" ]]; then
         msg blue "base image set, ignoring distro:version"
     elif [[ -z "${INPUT_DISTRO:-}" ]] || [[ -z "${INPUT_DISTRO_VERSION:-}" ]]; then
         # shellcheck disable=SC1091
@@ -263,9 +281,11 @@ function check_required_env {
         die "Missing environment variables: ${missing[*]}"
     fi
 
-    if [[ -z "${INPUT_BASE_IMAGE:-}" ]]; then
-        if [[ -z "${INPUT_DISTRO:-}" ]] || [[ -z "${INPUT_DISTRO_VERSION:-}" ]]; then
-            die "INPUT_BASE_IMAGE or INPUT_DISTRO/INPUT_DISTRO_VERSION are required"
+    if [[ -z "${INPUT_DOCKERFILE:-}" ]]; then
+        if [[ -z "${INPUT_BASE_IMAGE:-}" ]]; then
+            if [[ -z "${INPUT_DISTRO:-}" ]] || [[ -z "${INPUT_DISTRO_VERSION:-}" ]]; then
+                die "INPUT_BASE_IMAGE or INPUT_DISTRO/INPUT_DISTRO_VERSION are required"
+            fi
         fi
     fi
 }
@@ -276,30 +296,111 @@ for tool in buildah skopeo; do
     command -v "$tool" >/dev/null || die "$tool is required but not found on this runner"
 done
 
-if [[ -z "${INPUT_BASE_IMAGE:-}" ]]; then
-    INPUT_BASE_IMAGE="${INPUT_DISTRO}:${INPUT_DISTRO_VERSION}"
+# ── dockerfile mode validation & FROM parsing ────────────────────────────
+if [[ -n "${INPUT_DOCKERFILE:-}" ]]; then
+    if [[ ! -f "${INPUT_DOCKERFILE}" ]]; then
+        die "Dockerfile '${INPUT_DOCKERFILE}' not found"
+    fi
+    if [[ -n "${INPUT_PACKAGES:-}" ]]; then
+        die "--packages cannot be used with --dockerfile"
+    fi
+    if [[ -n "${INPUT_EXEC:-}" ]]; then
+        die "--exec cannot be used with --dockerfile"
+    fi
+    if [[ -n "${INPUT_BASE_IMAGE:-}" ]]; then
+        die "--base-image cannot be used with --dockerfile"
+    fi
+    if [[ -n "${INPUT_WORKDIR:-}" ]]; then
+        die "--workdir cannot be used with --dockerfile"
+    fi
+
+    # Parse the first FROM line to extract distro and version.
+    # Handles optional --platform flag: FROM [--platform=...] image:tag
+    from_line=$(grep -i '^FROM ' "${INPUT_DOCKERFILE}" | head -n1) ||
+        die "No FROM line found in '${INPUT_DOCKERFILE}'"
+    if [[ -z "$from_line" ]]; then
+        die "No FROM line found in '${INPUT_DOCKERFILE}'"
+    fi
+
+    # Check if the FROM line has --platform; we'll skip --platform
+    # in the buildah bud call if so.
+    dockerfile_has_platform="false"
+    if [[ "$from_line" =~ --platform ]]; then
+        dockerfile_has_platform="true"
+    fi
+
+    # Extract the image reference (last token on the FROM line,
+    # skipping any --platform=... or "AS name" parts).
+    # "FROM --platform=linux/amd64 fedora:44 AS builder" → "fedora:44"
+    from_image=""
+    # shellcheck disable=SC2086
+    set -- $from_line
+    shift # drop "FROM"
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+        --platform=* | --platform)
+            if [[ "$1" == "--platform" ]]; then
+                shift # skip the value too
+            fi
+            shift
+            ;;
+        *)
+            from_image="$1"
+            break
+            ;;
+        esac
+    done
+
+    if [[ -z "$from_image" ]]; then
+        die "Cannot parse image from FROM line in '${INPUT_DOCKERFILE}'"
+    fi
+
+    # Strip any registry prefix: "registry.fedoraproject.org/fedora:44" → "fedora:44"
+    from_short="${from_image##*/}"
+
+    if [[ "$from_short" != *:* ]]; then
+        die "FROM image '${from_image}' in '${INPUT_DOCKERFILE}' must include a version tag (e.g. 'fedora:44')"
+    fi
+
+    from_distro="${from_short%%:*}"
+    from_version="${from_short##*:}"
+
+    # Allow --distro/--distro-version to override what was parsed
+    distro="${INPUT_DISTRO:-$from_distro}"
+    version="${INPUT_DISTRO_VERSION:-$from_version}"
+
+    if [[ -z "$distro" || -z "$version" ]]; then
+        die "Cannot determine distro/version from FROM line in '${INPUT_DOCKERFILE}'"
+    fi
+
+    echo "Dockerfile: ${INPUT_DOCKERFILE}"
+    echo "Distro: $distro  Version: $version (from Dockerfile)"
+else
+    if [[ -z "${INPUT_BASE_IMAGE:-}" ]]; then
+        INPUT_BASE_IMAGE="${INPUT_DISTRO}:${INPUT_DISTRO_VERSION}"
+    fi
+
+    # Split the space-separated package list into an array once so we can
+    # quote it properly everywhere (avoids SC2086).
+    read -ra packages <<<"${INPUT_PACKAGES:-}"
+
+    # ── parse distro / version from base-image ───────────────────────
+    # Strip any registry prefix: "registry.fedoraproject.org/fedora:44" → "fedora:44"
+    base_short="${INPUT_BASE_IMAGE##*/}"
+
+    if [[ "$base_short" != *:* ]]; then
+        die "base-image '${INPUT_BASE_IMAGE}' must include a version tag (e.g. 'fedora:44')"
+    fi
+
+    distro="${base_short%%:*}"
+    version="${base_short##*:}"
+
+    if [[ -z "$distro" || -z "$version" ]]; then
+        die "Cannot parse distro/version from base-image '${INPUT_BASE_IMAGE}'"
+    fi
+
+    echo "Distro: $distro  Version: $version"
 fi
-
-# Split the space-separated package list into an array once so we can
-# quote it properly everywhere (avoids SC2086).
-read -ra packages <<<"${INPUT_PACKAGES:-}"
-
-# ── parse distro / version from base-image ───────────────────────────────
-# Strip any registry prefix: "registry.fedoraproject.org/fedora:44" → "fedora:44"
-base_short="${INPUT_BASE_IMAGE##*/}"
-
-if [[ "$base_short" != *:* ]]; then
-    die "base-image '${INPUT_BASE_IMAGE}' must include a version tag (e.g. 'fedora:44')"
-fi
-
-distro="${base_short%%:*}"
-version="${base_short##*:}"
-
-if [[ -z "$distro" || -z "$version" ]]; then
-    die "Cannot parse distro/version from base-image '${INPUT_BASE_IMAGE}'"
-fi
-
-echo "Distro: $distro  Version: $version"
 
 # ── validate tag ─────────────────────────────────────────────────────────
 if [[ ! "${INPUT_TAG}" =~ ^[a-zA-Z0-9_][a-zA-Z0-9_.\-]{0,127}$ ]]; then
@@ -410,168 +511,189 @@ fi
 if [[ "$build_needed" == "true" ]]; then
     group "Building container"
 
-    if [[ -n "${INPUT_PLATFORM:-}" ]]; then
-        ctr=$(buildah from --platform "${INPUT_PLATFORM}" "${INPUT_BASE_IMAGE}")
+    if [[ -n "${INPUT_DOCKERFILE:-}" ]]; then
+        # ── Dockerfile-based build ───────────────────────────────────
+        bud_args=(--format docker)
+        # Only pass --platform if the Dockerfile doesn't already
+        # specify it in the FROM line.
+        if [[ -n "${INPUT_PLATFORM:-}" ]]; then
+            if [[ "${dockerfile_has_platform}" != "true" ]]; then
+                bud_args+=(--platform "${INPUT_PLATFORM}")
+            else
+                echo "::warning::--platform ignored: Dockerfile specifies --platform in FROM line"
+            fi
+        fi
+        bud_args+=(-f "${INPUT_DOCKERFILE}")
+        bud_args+=(-t "$image")
+
+        buildah bud "${bud_args[@]}" .
     else
-        ctr=$(buildah from "${INPUT_BASE_IMAGE}")
+        # ── package-install build ────────────────────────────────────
+        if [[ -n "${INPUT_PLATFORM:-}" ]]; then
+            ctr=$(buildah from --platform "${INPUT_PLATFORM}" "${INPUT_BASE_IMAGE}")
+        else
+            ctr=$(buildah from "${INPUT_BASE_IMAGE}")
+        fi
+        # Clean up the working container on exit (matters on self-hosted runners).
+        # shellcheck disable=SC2064
+        trap "buildah rm '$ctr' 2>/dev/null || true" EXIT
+
+        # helper: run a command inside the container
+        crun() {
+            if [[ "${1:-}" != "-e" ]]; then
+                buildah run "$ctr" -- "$@"
+            else
+                local -a env_args=()
+                local -a positional_args=()
+
+                while [[ $# -gt 0 ]]; do
+                    case "$1" in
+                    -e)
+                        [[ $# -ge 2 ]] || die "-e requires an argument"
+                        env_args+=(-e "$2")
+                        shift 2
+                        ;;
+                    --)
+                        shift
+                        positional_args+=("$@")
+                        break
+                        ;;
+                    *)
+                        positional_args+=("$1")
+                        shift
+                        ;;
+                    esac
+                done
+
+                [[ ${#positional_args[@]} -gt 0 ]] || die "crun: no command specified"
+                buildah run "${env_args[@]}" "$ctr" -- "${positional_args[@]}"
+            fi
+        }
+
+        # ── package-manager detection ────────────────────────────────
+        case "$distro" in
+        alpine)
+            crun apk update
+            crun apk upgrade
+            if [[ ${#packages[@]} -gt 0 ]]; then
+                crun apk add "${packages[@]}"
+            fi
+            crun rm -rf /var/cache/apk/*
+            ;;
+        arch*)
+            crun pacman -Syu --noconfirm
+            if [[ ${#packages[@]} -gt 0 ]]; then
+                crun pacman -S --noconfirm "${packages[@]}"
+            fi
+            crun bash -c 'mkdir -p /var/cache/pacman/pkg && pacman -S --clean --noconfirm'
+            ;;
+        centos*)
+            crun dnf upgrade -y --setopt=install_weak_deps=False
+            if [[ ${#packages[@]} -gt 0 ]]; then
+                crun dnf install -y --setopt=install_weak_deps=False "${packages[@]}"
+            fi
+            crun dnf clean all
+            ;;
+        debian | ubuntu)
+            crun bash -c "echo 'APT::Install-Recommends \"false\";' > /etc/apt/apt.conf.d/99-no-recommends"
+            crun env DEBIAN_FRONTEND=noninteractive apt-get -qq update
+            crun env DEBIAN_FRONTEND=noninteractive apt-get -qq -y dist-upgrade
+            if [[ ${#packages[@]} -gt 0 ]]; then
+                crun env DEBIAN_FRONTEND=noninteractive apt-get -qq -y install "${packages[@]}"
+            fi
+            crun env DEBIAN_FRONTEND=noninteractive apt-get -qq clean
+            ;;
+        fedora)
+            crun dnf upgrade -y --setopt=install_weak_deps=False
+            if [[ ${#packages[@]} -gt 0 ]]; then
+                crun dnf install -y --setopt=install_weak_deps=False "${packages[@]}"
+            fi
+            crun dnf clean all
+            ;;
+        opensuse*)
+            crun zypper update -y
+            if [[ ${#packages[@]} -gt 0 ]]; then
+                crun zypper install -y "${packages[@]}"
+            fi
+            crun zypper clean
+            ;;
+        rocky)
+            if [[ "$version" == 8* ]]; then
+                repo="powertools"
+            else
+                repo="crb"
+            fi
+            crun dnf upgrade -y --setopt=install_weak_deps=False
+            crun dnf install -y 'dnf-command(config-manager)'
+            crun dnf config-manager --set-enabled "$repo"
+            crun dnf install -y epel-release --setopt=install_weak_deps=False
+            if [[ ${#packages[@]} -gt 0 ]]; then
+                crun dnf install -y --setopt=install_weak_deps=False "${packages[@]}"
+            fi
+            crun dnf clean all
+            ;;
+        *)
+            echo "::warning::Unknown distro '${distro}' -- skipping package installation"
+            ;;
+        esac
+
+        # ── run custom commands ──────────────────────────────────────
+        if [[ -n "${INPUT_EXEC:-}" ]]; then
+            endgroup
+            group "Running custom commands (exec)"
+
+            # If the repository has been checked out, copy it into the
+            # container and set it as the working directory.
+            repo_copied="false"
+            repo_dir="${GITHUB_WORKSPACE:-.}"
+            if [[ -d "$repo_dir/.git" ]]; then
+                buildah copy "$ctr" "$repo_dir" /tmp/clone
+                buildah config --workingdir /tmp/clone "$ctr"
+                repo_copied="true"
+            fi
+
+            # Forward the host environment into the container so that
+            # CI variables (GITHUB_*, workflow env, etc.) are available
+            # in exec scripts.  PATH is excluded so the container keeps
+            # its own (e.g. Alpine needs /sbin, Fedora doesn't).
+            # This mirrors the ci-templates approach.
+            env_file=$(mktemp)
+            export -p >"$env_file"
+            sed -i '/^declare -x PATH=/d' "$env_file"
+            chmod a+r "$env_file"
+
+            # bind-mount via -v "$env_file:/.env_file:ro" doesn't work (Permission Denied)
+            # but I don't have the time to debug this right now
+            buildah copy "$ctr" "$env_file" /tmp/.env
+            # Allow pip to work without a virtual environment during exec
+            buildah run \
+                -e "PIP_BREAK_SYSTEM_PACKAGES=1" \
+                "$ctr" -- \
+                sh -c ". /tmp/.env; set -eux; ${INPUT_EXEC}"
+            buildah run "$ctr" -- rm -f /tmp/.env
+            rm -f "$env_file"
+
+            # Clean up the repo copy and reset the working directory.
+            if [[ "$repo_copied" == "true" ]]; then
+                crun rm -rf /tmp/clone
+                buildah config --workingdir / "$ctr"
+            fi
+        fi
+
+        # ── container config ─────────────────────────────────────────
+        workdir="${INPUT_WORKDIR:-/github/workspace}"
+        buildah config --workingdir "$workdir" "$ctr"
+
+        # ── commit ───────────────────────────────────────────────────
+        # Use docker format for broad registry/client compatibility.
+        # --squash collapses all layers so that package cache cleanup
+        # actually reclaims space in the final image.
+        buildah commit --squash --format docker "$ctr" "$image"
     fi
-    # Clean up the working container on exit (matters on self-hosted runners).
-    # shellcheck disable=SC2064
-    trap "buildah rm '$ctr' 2>/dev/null || true" EXIT
-
-    # helper: run a command inside the container
-    crun() {
-        if [[ "${1:-}" != "-e" ]]; then
-            buildah run "$ctr" -- "$@"
-        else
-            local -a env_args=()
-            local -a positional_args=()
-
-            while [[ $# -gt 0 ]]; do
-                case "$1" in
-                -e)
-                    [[ $# -ge 2 ]] || die "-e requires an argument"
-                    env_args+=(-e "$2")
-                    shift 2
-                    ;;
-                --)
-                    shift
-                    positional_args+=("$@")
-                    break
-                    ;;
-                *)
-                    positional_args+=("$1")
-                    shift
-                    ;;
-                esac
-            done
-
-            [[ ${#positional_args[@]} -gt 0 ]] || die "crun: no command specified"
-            buildah run "${env_args[@]}" "$ctr" -- "${positional_args[@]}"
-        fi
-    }
-
-    # ── package-manager detection ────────────────────────────────────
-    case "$distro" in
-    alpine)
-        crun apk update
-        crun apk upgrade
-        if [[ ${#packages[@]} -gt 0 ]]; then
-            crun apk add "${packages[@]}"
-        fi
-        crun rm -rf /var/cache/apk/*
-        ;;
-    arch*)
-        crun pacman -Syu --noconfirm
-        if [[ ${#packages[@]} -gt 0 ]]; then
-            crun pacman -S --noconfirm "${packages[@]}"
-        fi
-        crun bash -c 'mkdir -p /var/cache/pacman/pkg && pacman -S --clean --noconfirm'
-        ;;
-    centos*)
-        crun dnf upgrade -y --setopt=install_weak_deps=False
-        if [[ ${#packages[@]} -gt 0 ]]; then
-            crun dnf install -y --setopt=install_weak_deps=False "${packages[@]}"
-        fi
-        crun dnf clean all
-        ;;
-    debian | ubuntu)
-        crun bash -c "echo 'APT::Install-Recommends \"false\";' > /etc/apt/apt.conf.d/99-no-recommends"
-        crun env DEBIAN_FRONTEND=noninteractive apt-get -qq update
-        crun env DEBIAN_FRONTEND=noninteractive apt-get -qq -y dist-upgrade
-        if [[ ${#packages[@]} -gt 0 ]]; then
-            crun env DEBIAN_FRONTEND=noninteractive apt-get -qq -y install "${packages[@]}"
-        fi
-        crun env DEBIAN_FRONTEND=noninteractive apt-get -qq clean
-        ;;
-    fedora)
-        crun dnf upgrade -y --setopt=install_weak_deps=False
-        if [[ ${#packages[@]} -gt 0 ]]; then
-            crun dnf install -y --setopt=install_weak_deps=False "${packages[@]}"
-        fi
-        crun dnf clean all
-        ;;
-    opensuse*)
-        crun zypper update -y
-        if [[ ${#packages[@]} -gt 0 ]]; then
-            crun zypper install -y "${packages[@]}"
-        fi
-        crun zypper clean
-        ;;
-    rocky)
-        if [[ "$version" == 8* ]]; then
-            repo="powertools"
-        else
-            repo="crb"
-        fi
-        crun dnf upgrade -y --setopt=install_weak_deps=False
-        crun dnf install -y 'dnf-command(config-manager)'
-        crun dnf config-manager --set-enabled "$repo"
-        crun dnf install -y epel-release --setopt=install_weak_deps=False
-        if [[ ${#packages[@]} -gt 0 ]]; then
-            crun dnf install -y --setopt=install_weak_deps=False "${packages[@]}"
-        fi
-        crun dnf clean all
-        ;;
-    *)
-        echo "::warning::Unknown distro '${distro}' -- skipping package installation"
-        ;;
-    esac
     endgroup
 
-    # ── run custom commands ──────────────────────────────────────────
-    if [[ -n "${INPUT_EXEC:-}" ]]; then
-        group "Running custom commands (exec)"
-
-        # If the repository has been checked out, copy it into the
-        # container and set it as the working directory.
-        repo_copied="false"
-        repo_dir="${GITHUB_WORKSPACE:-.}"
-        if [[ -d "$repo_dir/.git" ]]; then
-            buildah copy "$ctr" "$repo_dir" /tmp/clone
-            buildah config --workingdir /tmp/clone "$ctr"
-            repo_copied="true"
-        fi
-
-        # Forward the host environment into the container so that
-        # CI variables (GITHUB_*, workflow env, etc.) are available
-        # in exec scripts.  PATH is excluded so the container keeps
-        # its own (e.g. Alpine needs /sbin, Fedora doesn't).
-        # This mirrors the ci-templates approach.
-        env_file=$(mktemp)
-        export -p >"$env_file"
-        sed -i '/^declare -x PATH=/d' "$env_file"
-        chmod a+r "$env_file"
-
-        # bind-mount via -v "$env_file:/.env_file:ro" doesn't work (Permission Denied)
-        # but I don't have the time to debug this right now
-        buildah copy "$ctr" "$env_file" /tmp/.env
-        # Allow pip to work without a virtual environment during exec
-        buildah run \
-            -e "PIP_BREAK_SYSTEM_PACKAGES=1" \
-            "$ctr" -- \
-            sh -c ". /tmp/.env; set -eux; ${INPUT_EXEC}"
-        buildah run "$ctr" -- rm -f /tmp/.env
-        rm -f "$env_file"
-
-        # Clean up the repo copy and reset the working directory.
-        if [[ "$repo_copied" == "true" ]]; then
-            crun rm -rf /tmp/clone
-            buildah config --workingdir / "$ctr"
-        fi
-        endgroup
-    fi
-
-    # ── container config ─────────────────────────────────────────────
-    workdir="${INPUT_WORKDIR:-/github/workspace}"
-    buildah config --workingdir "$workdir" "$ctr"
-
-    # ── commit & push ────────────────────────────────────────────────
-    group "Committing and pushing image"
-    # Use docker format for broad registry/client compatibility.
-    # --squash collapses all layers so that package cache cleanup
-    # actually reclaims space in the final image.
-    buildah commit --squash --format docker "$ctr" "$image"
+    # ── push ─────────────────────────────────────────────────────────
+    group "Pushing image"
     if [[ -z "$DRY_RUN" ]]; then
         if ! buildah push --retry 3 "$image"; then
             endgroup
