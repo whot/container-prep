@@ -513,10 +513,11 @@ fi
 
 generated_dockerfile=""
 generated_env_file=""
+generated_exec_script=""
 
 # Clean up generated files on exit.
 cleanup_generated() {
-    rm -f "$generated_dockerfile" "$generated_env_file"
+    rm -f "$generated_dockerfile" "$generated_env_file" "$generated_exec_script"
 }
 trap cleanup_generated EXIT
 
@@ -601,19 +602,28 @@ if [[ "$build_needed" == "true" && -z "${INPUT_DOCKERFILE:-}" ]]; then
             export -p | sed 's/^declare -x /export /' |
                 grep -vE '^export (-\w+ )*PATH=' >"$generated_env_file"
 
+            # Write the exec script to a file in the build context
+            # so it can be bind-mounted.  This avoids issues with
+            # multi-line scripts being split across Dockerfile lines.
+            generated_exec_script=".container-prep-exec"
+            printf '%s\n' "${INPUT_EXEC}" >"$generated_exec_script"
+            chmod +x "$generated_exec_script"
+
             echo "ENV PIP_BREAK_SYSTEM_PACKAGES=1"
 
-            # Use RUN --mount=type=bind to make the env file and
-            # (optionally) the repo checkout available during exec
-            # without creating image layers.
+            # Use RUN --mount=type=bind to make the env file, exec
+            # script, and (optionally) the repo checkout available
+            # during exec without creating image layers.
             repo_dir="${GITHUB_WORKSPACE:-.}"
             if [[ -d "$repo_dir/.git" ]]; then
                 echo "RUN --mount=type=bind,source=.container-prep-env,target=/tmp/.env \\"
+                echo "    --mount=type=bind,source=.container-prep-exec,target=/tmp/exec.sh \\"
                 echo "    --mount=type=bind,source=.,target=/tmp/clone \\"
-                echo "    cd /tmp/clone && . /tmp/.env && set -eux; ${INPUT_EXEC}"
+                echo "    cd /tmp/clone && . /tmp/.env && set -eux && sh /tmp/exec.sh"
             else
                 echo "RUN --mount=type=bind,source=.container-prep-env,target=/tmp/.env \\"
-                echo "    . /tmp/.env && set -eux; ${INPUT_EXEC}"
+                echo "    --mount=type=bind,source=.container-prep-exec,target=/tmp/exec.sh \\"
+                echo "    . /tmp/.env && set -eux && sh /tmp/exec.sh"
             fi
         fi
 
