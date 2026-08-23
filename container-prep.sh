@@ -507,115 +507,72 @@ if [[ -z "$image" ]]; then
     image="$upstream_image"
 fi
 
-# ── build if needed ──────────────────────────────────────────────────────
-if [[ "$build_needed" == "true" ]]; then
-    group "Building container"
+# ── Dockerfile generation ────────────────────────────────────────────────
+# When no --dockerfile is provided, generate one from the YAML inputs so
+# either way the final build is based on a Dockerfile.
 
-    if [[ -n "${INPUT_DOCKERFILE:-}" ]]; then
-        # ── Dockerfile-based build ───────────────────────────────────
-        bud_args=(--format docker)
-        # Only pass --platform if the Dockerfile doesn't already
-        # specify it in the FROM line.
-        if [[ -n "${INPUT_PLATFORM:-}" ]]; then
-            if [[ "${dockerfile_has_platform}" != "true" ]]; then
-                bud_args+=(--platform "${INPUT_PLATFORM}")
-            else
-                echo "::warning::--platform ignored: Dockerfile specifies --platform in FROM line"
-            fi
-        fi
-        bud_args+=(-f "${INPUT_DOCKERFILE}")
-        bud_args+=(-t "$image")
+generated_dockerfile=""
+generated_env_file=""
+generated_exec_script=""
 
-        buildah bud "${bud_args[@]}" .
-    else
-        # ── package-install build ────────────────────────────────────
-        if [[ -n "${INPUT_PLATFORM:-}" ]]; then
-            ctr=$(buildah from --platform "${INPUT_PLATFORM}" "${INPUT_BASE_IMAGE}")
-        else
-            ctr=$(buildah from "${INPUT_BASE_IMAGE}")
-        fi
-        # Clean up the working container on exit (matters on self-hosted runners).
-        # shellcheck disable=SC2064
-        trap "buildah rm '$ctr' 2>/dev/null || true" EXIT
+# Clean up generated files on exit.
+cleanup_generated() {
+    rm -f "$generated_dockerfile" "$generated_env_file" "$generated_exec_script"
+}
+trap cleanup_generated EXIT
 
-        # helper: run a command inside the container
-        crun() {
-            if [[ "${1:-}" != "-e" ]]; then
-                buildah run "$ctr" -- "$@"
-            else
-                local -a env_args=()
-                local -a positional_args=()
+if [[ "$build_needed" == "true" && -z "${INPUT_DOCKERFILE:-}" ]]; then
+    generated_dockerfile=$(mktemp "${TMPDIR:-/tmp}/container-prep-dockerfile.XXXXXX")
+    INPUT_DOCKERFILE="$generated_dockerfile"
 
-                while [[ $# -gt 0 ]]; do
-                    case "$1" in
-                    -e)
-                        [[ $# -ge 2 ]] || die "-e requires an argument"
-                        env_args+=(-e "$2")
-                        shift 2
-                        ;;
-                    --)
-                        shift
-                        positional_args+=("$@")
-                        break
-                        ;;
-                    *)
-                        positional_args+=("$1")
-                        shift
-                        ;;
-                    esac
-                done
+    {
+        echo "FROM ${INPUT_BASE_IMAGE}"
 
-                [[ ${#positional_args[@]} -gt 0 ]] || die "crun: no command specified"
-                buildah run "${env_args[@]}" "$ctr" -- "${positional_args[@]}"
-            fi
-        }
-
-        # ── package-manager detection ────────────────────────────────
+        # ── package-manager instructions ─────────────────────────────
         case "$distro" in
         alpine)
-            crun apk update
-            crun apk upgrade
+            echo "RUN apk update && apk upgrade \\"
             if [[ ${#packages[@]} -gt 0 ]]; then
-                crun apk add "${packages[@]}"
+                echo "    && apk add ${packages[*]} \\"
             fi
-            crun rm -rf /var/cache/apk/*
+            echo "    && rm -rf /var/cache/apk/*"
             ;;
         arch*)
-            crun pacman -Syu --noconfirm
+            echo "RUN pacman -Syu --noconfirm \\"
             if [[ ${#packages[@]} -gt 0 ]]; then
-                crun pacman -S --noconfirm "${packages[@]}"
+                echo "    && pacman -S --noconfirm ${packages[*]} \\"
             fi
-            crun bash -c 'mkdir -p /var/cache/pacman/pkg && pacman -S --clean --noconfirm'
+            echo "    && mkdir -p /var/cache/pacman/pkg && pacman -S --clean --noconfirm"
             ;;
         centos*)
-            crun dnf upgrade -y --setopt=install_weak_deps=False
+            echo "RUN dnf upgrade -y --setopt=install_weak_deps=False \\"
             if [[ ${#packages[@]} -gt 0 ]]; then
-                crun dnf install -y --setopt=install_weak_deps=False "${packages[@]}"
+                echo "    && dnf install -y --setopt=install_weak_deps=False ${packages[*]} \\"
             fi
-            crun dnf clean all
+            echo "    && dnf clean all"
             ;;
         debian | ubuntu)
-            crun bash -c "echo 'APT::Install-Recommends \"false\";' > /etc/apt/apt.conf.d/99-no-recommends"
-            crun env DEBIAN_FRONTEND=noninteractive apt-get -qq update
-            crun env DEBIAN_FRONTEND=noninteractive apt-get -qq -y dist-upgrade
+            echo "RUN echo 'APT::Install-Recommends \"false\";' > /etc/apt/apt.conf.d/99-no-recommends"
+            echo "ENV DEBIAN_FRONTEND=noninteractive"
+            echo "RUN apt-get -qq update && apt-get -qq -y dist-upgrade \\"
             if [[ ${#packages[@]} -gt 0 ]]; then
-                crun env DEBIAN_FRONTEND=noninteractive apt-get -qq -y install "${packages[@]}"
+                echo "    && apt-get -qq -y install ${packages[*]} \\"
             fi
-            crun env DEBIAN_FRONTEND=noninteractive apt-get -qq clean
+            echo "    && apt-get -qq clean"
             ;;
         fedora)
-            crun dnf upgrade -y --setopt=install_weak_deps=False
+            echo "RUN dnf upgrade -y --setopt=install_weak_deps=False \\"
             if [[ ${#packages[@]} -gt 0 ]]; then
-                crun dnf install -y --setopt=install_weak_deps=False "${packages[@]}"
+                echo "    && dnf install -y --setopt=install_weak_deps=False ${packages[*]} \\"
             fi
-            crun dnf clean all
+            echo "    && dnf clean all"
             ;;
         opensuse*)
-            crun zypper update -y
+            echo "RUN zypper update -y \\"
             if [[ ${#packages[@]} -gt 0 ]]; then
-                crun zypper install -y "${packages[@]}"
+                echo "    && zypper install -y ${packages[*]} \\"
             fi
-            crun zypper clean
+            echo "    && zypper clean"
             ;;
         rocky)
             if [[ "$version" == 8* ]]; then
@@ -623,73 +580,76 @@ if [[ "$build_needed" == "true" ]]; then
             else
                 repo="crb"
             fi
-            crun dnf upgrade -y --setopt=install_weak_deps=False
-            crun dnf install -y 'dnf-command(config-manager)'
-            crun dnf config-manager --set-enabled "$repo"
-            crun dnf install -y epel-release --setopt=install_weak_deps=False
+            echo "RUN dnf upgrade -y --setopt=install_weak_deps=False \\"
+            echo "    && dnf install -y 'dnf-command(config-manager)' \\"
+            echo "    && dnf config-manager --set-enabled ${repo} \\"
+            echo "    && dnf install -y epel-release --setopt=install_weak_deps=False \\"
             if [[ ${#packages[@]} -gt 0 ]]; then
-                crun dnf install -y --setopt=install_weak_deps=False "${packages[@]}"
+                echo "    && dnf install -y --setopt=install_weak_deps=False ${packages[*]} \\"
             fi
-            crun dnf clean all
+            echo "    && dnf clean all"
             ;;
         *)
-            echo "::warning::Unknown distro '${distro}' -- skipping package installation"
+            echo "# Unknown distro '${distro}' -- skipping package installation"
             ;;
         esac
 
-        # ── run custom commands ──────────────────────────────────────
+        # ── exec ─────────────────────────────────────────────────────
         if [[ -n "${INPUT_EXEC:-}" ]]; then
-            endgroup
-            group "Running custom commands (exec)"
+            # Forward host environment into the container.
+            # PATH is excluded so the container keeps its own.
+            generated_env_file=".container-prep-env"
+            export -p | sed 's/^declare -x /export /' |
+                grep -vE '^export (-\w+ )*PATH=' >"$generated_env_file"
 
-            # If the repository has been checked out, copy it into the
-            # container and set it as the working directory.
-            repo_copied="false"
+            # Write the exec script to a file in the build context
+            # so it can be bind-mounted.  This avoids issues with
+            # multi-line scripts being split across Dockerfile lines.
+            generated_exec_script=".container-prep-exec"
+            printf '%s\n' "${INPUT_EXEC}" >"$generated_exec_script"
+            chmod +x "$generated_exec_script"
+
+            # Use RUN --mount=type=bind to make the env file, exec
+            # script, and (optionally) the repo checkout available
+            # during exec without creating image layers.
             repo_dir="${GITHUB_WORKSPACE:-.}"
             if [[ -d "$repo_dir/.git" ]]; then
-                buildah copy "$ctr" "$repo_dir" /tmp/clone
-                buildah config --workingdir /tmp/clone "$ctr"
-                repo_copied="true"
-            fi
-
-            # Forward the host environment into the container so that
-            # CI variables (GITHUB_*, workflow env, etc.) are available
-            # in exec scripts.  PATH is excluded so the container keeps
-            # its own (e.g. Alpine needs /sbin, Fedora doesn't).
-            # This mirrors the ci-templates approach.
-            env_file=$(mktemp)
-            export -p >"$env_file"
-            sed -i '/^declare -x PATH=/d' "$env_file"
-            chmod a+r "$env_file"
-
-            # bind-mount via -v "$env_file:/.env_file:ro" doesn't work (Permission Denied)
-            # but I don't have the time to debug this right now
-            buildah copy "$ctr" "$env_file" /tmp/.env
-            # Allow pip to work without a virtual environment during exec
-            buildah run \
-                -e "PIP_BREAK_SYSTEM_PACKAGES=1" \
-                "$ctr" -- \
-                sh -c ". /tmp/.env; set -eux; ${INPUT_EXEC}"
-            buildah run "$ctr" -- rm -f /tmp/.env
-            rm -f "$env_file"
-
-            # Clean up the repo copy and reset the working directory.
-            if [[ "$repo_copied" == "true" ]]; then
-                crun rm -rf /tmp/clone
-                buildah config --workingdir / "$ctr"
+                echo "RUN --mount=type=bind,source=.container-prep-env,target=/tmp/.env \\"
+                echo "    --mount=type=bind,source=.container-prep-exec,target=/tmp/exec.sh \\"
+                echo "    --mount=type=bind,source=.,target=/tmp/clone \\"
+                echo "    cd /tmp/clone && . /tmp/.env && set -eux && PIP_BREAK_SYSTEM_PACKAGES=1 sh /tmp/exec.sh"
+            else
+                echo "RUN --mount=type=bind,source=.container-prep-env,target=/tmp/.env \\"
+                echo "    --mount=type=bind,source=.container-prep-exec,target=/tmp/exec.sh \\"
+                echo "    . /tmp/.env && set -eux && PIP_BREAK_SYSTEM_PACKAGES=1 sh /tmp/exec.sh"
             fi
         fi
 
-        # ── container config ─────────────────────────────────────────
+        # ── working directory ────────────────────────────────────────
         workdir="${INPUT_WORKDIR:-/github/workspace}"
-        buildah config --workingdir "$workdir" "$ctr"
+        echo "WORKDIR ${workdir}"
+    } >"$generated_dockerfile"
 
-        # ── commit ───────────────────────────────────────────────────
-        # Use docker format for broad registry/client compatibility.
-        # --squash collapses all layers so that package cache cleanup
-        # actually reclaims space in the final image.
-        buildah commit --squash --format docker "$ctr" "$image"
+    echo "Generated Dockerfile:"
+    cat "$generated_dockerfile"
+fi
+
+# ── build if needed ──────────────────────────────────────────────────────
+if [[ "$build_needed" == "true" ]]; then
+    group "Building container"
+
+    bud_args=(--squash --format docker)
+    if [[ -n "${INPUT_PLATFORM:-}" ]]; then
+        if [[ "${dockerfile_has_platform:-false}" != "true" ]]; then
+            bud_args+=(--platform "${INPUT_PLATFORM}")
+        else
+            echo "::warning::--platform ignored: Dockerfile specifies --platform in FROM line"
+        fi
     fi
+    bud_args+=(-f "${INPUT_DOCKERFILE}")
+    bud_args+=(-t "$image")
+
+    buildah bud "${bud_args[@]}" .
     endgroup
 
     # ── push ─────────────────────────────────────────────────────────
