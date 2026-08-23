@@ -153,16 +153,18 @@ the registry.
 | `distro-version`| yes[^1]  | —                     | Version component of the base OCI image (e.g. `44`, `24.04`, `3.20`) |
 | `tag`           | yes      | —                     | Image tag — bump when content should change                          |
 | `base-image`    | no[^1]   | —                     | Base OCI image - if set, `distro` and `distro-version` are ignored   |
-| `packages`      | no       | `''`                  | Space-separated packages to install                                  |
+| `packages`      | no[^2]   | `''`                  | Space-separated packages to install                                  |
 | `suffix`        | no       | `<distro>/<version>`  | Override the image path suffix. When `platform` is set without a `suffix`, the arch is appended automatically (e.g. `<distro>/<version>/386`). |
 | `registry`      | no       | `ghcr.io`             | Container registry                                                   |
 | `token`         | no       | `${{ github.token }}` | Registry auth token                                                  |
-| `exec`          | no       | `''`                  | Shell commands to run inside the container after package installation (see [exec](#exec)) |
-| `workdir`       | no       | `/github/workspace`   | Working directory inside the container                               |
-| `platform`      | no       | `''` (host platform)  | Target platform (e.g. `linux/amd64`, `linux/arm64`, `linux/386`). When set without an explicit `suffix`, the architecture is appended to the image path (see [Cross-platform builds](#cross-platform-builds)). |
+| `exec`          | no[^2]   | `''`                  | Shell commands to run inside the container after package installation (see [exec](#exec)) |
+| `workdir`       | no[^2]   | `/github/workspace`   | Working directory inside the container                               |
+| `platform`      | no[^2]   | `''` (host platform)  | Target platform (e.g. `linux/amd64`, `linux/arm64`, `linux/386`). When set without an explicit `suffix`, the architecture is appended to the image path (see [Cross-platform builds](#cross-platform-builds)). |
+| `dockerfile`    | no       | `''`                  | Path to a Dockerfile for the build (see [Dockerfile builds](#dockerfile-builds)). |
 | `force-rebuild` | no       | `false`               | Set to `true` to always rebuild                                      |
 
-[^1]: Either (`distro` **and** `distro-version`) **or** `base-image` are required.
+[^1]: Either (`distro` **and** `distro-version`) **or** `base-image` **or** `dockerfile` are required.
+[^2]: Not available if `dockerfile` is given.
 
 ### Outputs
 
@@ -209,6 +211,36 @@ checkout, so exec scripts can reference repository files directly:
 
 The repository copy is removed after exec completes so it does not end
 up in the final image.
+
+Host environment variables are forwarded into the container during
+exec, so CI variables (`GITHUB_SHA`, `GITHUB_REF`, workflow `env`
+values, etc.) are available to exec scripts.  `PATH` is excluded so
+the container keeps its own.
+
+This mirrors [freedesktop ci-templates](https://gitlab.freedesktop.org/freedesktop/ci-templates)'
+`FDO_DISTRIBUTION_EXEC`, which also makes the repository and host
+environment available during container setup.
+
+### Dockerfile builds
+
+Use the `dockerfile` input to build from a Dockerfile instead of the
+automatic package-install flow. The distro and version are extracted
+from the first `FROM` line in the Dockerfile and used for the image
+path. You can override these with `distro` and `distro-version`.
+
+```yaml
+- uses: whot/gh-ci-templates@main
+  with:
+    dockerfile: '.github/containers/Dockerfile.fedora'
+    tag: '2025-08-23.0'
+```
+
+When `dockerfile` is set, `packages`, `exec`, `base-image`, and
+`workdir` cannot be used — all build logic (including `WORKDIR`)
+should be in the Dockerfile itself.
+
+If the Dockerfile's `FROM` line includes `--platform`, the `platform`
+input is ignored. Otherwise `platform` is passed through to the build.
 
 ### Cross-platform builds
 
