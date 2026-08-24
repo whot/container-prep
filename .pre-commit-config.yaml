@@ -12,3 +12,9 @@ repos:
         language: system
         entry: shellcheck --severity=warning -e SC2068
         types: [shell]
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.16.4
+    hooks:
+    - id: ruff
+      args: ['--ignore=E741,E501']
+    - id: ruff-format

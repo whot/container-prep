@@ -20,6 +20,9 @@ jobs:
   cache-hit:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
       - uses: actions/checkout@v7
 
       - name: First build (cold cache)
@@ -55,6 +58,9 @@ jobs:
   force-rebuild:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
       - uses: actions/checkout@v7
 
       - name: First build
@@ -87,6 +93,9 @@ jobs:
   exec:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
       - uses: actions/checkout@v7
 
       - name: Build with exec
@@ -116,6 +125,9 @@ jobs:
   exec-repo:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
       - uses: actions/checkout@v7
 
       - name: Build with exec that reads repo files
@@ -127,7 +139,7 @@ jobs:
           tag: 'execrepo-test-${{ github.sha }}'
           exec: |
             test -f action.yml
-            test -f container-prep.sh
+            test -f container-prep.py
             cp action.yml /repo-marker.yml
 
       - name: Verify exec could read repo files
@@ -147,11 +159,51 @@ jobs:
           [[ "$rc" -ne 0 ]] \
             || { echo "::error::repo checkout should have been removed"; exit 1; }
 
+  # ── exec: environment forwarding ─────────────────────────────────
+  # Verify that host environment variables are forwarded into exec.
+  exec-env:
+    runs-on: ubuntu-latest
+    env:
+      CUSTOM_VAR: 'hello-from-host'
+    steps:
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - uses: actions/checkout@v7
+
+      - name: Build with exec that reads host env
+        id: prep
+        uses: ./
+        with:
+          distro: 'alpine'
+          distro-version: '3.20'
+          tag: 'execenv-test-${{ github.sha }}'
+          exec: |
+            echo "$CUSTOM_VAR" > /env-marker.txt
+            echo "$GITHUB_REPOSITORY" > /repo-marker.txt
+
+      - name: Verify custom env var was forwarded
+        run: |
+          got=$(podman run --rm "${{ steps.prep.outputs.image }}" \
+            cat /env-marker.txt)
+          [[ "$got" == "hello-from-host" ]] \
+            || { echo "::error::expected 'hello-from-host', got: $got"; exit 1; }
+
+      - name: Verify GITHUB_* env var was forwarded
+        run: |
+          got=$(podman run --rm "${{ steps.prep.outputs.image }}" \
+            cat /repo-marker.txt)
+          [[ "$got" == "${{ github.repository }}" ]] \
+            || { echo "::error::expected '${{ github.repository }}', got: $got"; exit 1; }
+
   # ── workdir ────────────────────────────────────────────────────────
   # Build with a custom workdir and verify it took effect.
   workdir:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
       - uses: actions/checkout@v7
 
       - name: Build with custom workdir
@@ -174,6 +226,9 @@ jobs:
   suffix:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
       - uses: actions/checkout@v7
 
       - name: Build with custom suffix
@@ -195,6 +250,9 @@ jobs:
   bad-base-image:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
       - uses: actions/checkout@v7
 
       - name: Should fail with no version tag
@@ -214,6 +272,9 @@ jobs:
   bad-tag:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
       - uses: actions/checkout@v7
 
       - name: Should fail with invalid tag
@@ -238,6 +299,9 @@ jobs:
   fork-pr-upstream-hit:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
       - uses: actions/checkout@v7
 
       - name: Build image in upstream registry
@@ -254,7 +318,8 @@ jobs:
         run: |
           GITHUB_OUTPUT="$(mktemp)"
           export GITHUB_OUTPUT
-          bash container-prep.sh \
+          python3 container-prep.py \
+            from-scratch \
             --distro 'alpine' \
             --distro-version '3.20' \
             --tag 'fork-up-${{ github.sha }}' \
@@ -277,13 +342,17 @@ jobs:
   fork-pr-pushes-upstream:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
       - uses: actions/checkout@v7
 
       - name: Simulate fork PR (no cache, verify build targets upstream)
         run: |
           GITHUB_OUTPUT="$(mktemp)"
           export GITHUB_OUTPUT
-          bash container-prep.sh \
+          python3 container-prep.py \
+            from-scratch \
             --distro 'alpine' \
             --distro-version '3.20' \
             --tag 'fork-build-${{ github.sha }}' \
@@ -310,6 +379,9 @@ jobs:
   platform:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
       - uses: actions/checkout@v7
 
       - name: Build with explicit platform
@@ -340,6 +412,9 @@ jobs:
   platform-with-suffix:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
       - uses: actions/checkout@v7
 
       - name: Build with platform and explicit suffix
@@ -360,11 +435,90 @@ jobs:
           [[ "$image" != *"/amd64:"* ]] \
             || { echo "::error::arch should not be appended when suffix is explicit: $image"; exit 1; }
 
+  # ── Dockerfile ──────────────────────────────────────────────────
+  # Build from a Dockerfile instead of the package-install flow.
+  dockerfile:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - uses: actions/checkout@v7
+
+      - name: Create test Dockerfile
+        run: |
+          cat > Dockerfile.test <<'EOF'
+          FROM alpine:3.20
+          RUN apk add --no-cache curl
+          RUN touch /dockerfile-marker
+          EOF
+
+      - name: Build with Dockerfile
+        id: prep
+        uses: ./
+        with:
+          dockerfile: 'Dockerfile.test'
+          tag: 'dockerfile-test-${{ github.sha }}'
+
+      - name: Verify marker file exists
+        run: |
+          podman run --rm "${{ steps.prep.outputs.image }}" \
+            test -f /dockerfile-marker \
+            || { echo "::error::/dockerfile-marker not found"; exit 1; }
+
+      - name: Verify curl is installed
+        run: |
+          podman run --rm "${{ steps.prep.outputs.image }}" \
+            curl --version \
+            || { echo "::error::curl not found in image"; exit 1; }
+
+      - name: Verify image path contains distro from FROM line
+        run: |
+          image="${{ steps.prep.outputs.image }}"
+          [[ "$image" == *"/alpine/3.20:"* ]] \
+            || { echo "::error::image path should contain /alpine/3.20: $image"; exit 1; }
+
+  # ── Dockerfile with distro override ────────────────────────────────
+  # Build from a Dockerfile but override the distro/version used in
+  # the image path.
+  dockerfile-distro-override:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - uses: actions/checkout@v7
+
+      - name: Create test Dockerfile
+        run: |
+          cat > Dockerfile.test <<'EOF'
+          FROM debian:stable
+          RUN touch /override-marker
+          EOF
+
+      - name: Build with Dockerfile and distro override
+        id: prep
+        uses: ./
+        with:
+          dockerfile: 'Dockerfile.test'
+          distro: 'alpine'
+          distro-version: '3.20'
+          tag: 'df-override-test-${{ github.sha }}'
+
+      - name: Verify image path uses overridden distro
+        run: |
+          image="${{ steps.prep.outputs.image }}"
+          [[ "$image" == *"/alpine/3.20:"* ]] \
+            || { echo "::error::image path should contain /alpine/3.20: $image"; exit 1; }
+
   # ── No packages ───────────────────────────────────────────────────
   # Build with no packages at all -- should produce a working image.
   no-packages:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
       - uses: actions/checkout@v7
 
       - name: Build without packages

@@ -26,8 +26,9 @@ jobs:
           - distro: 'fedora'
             distro-version: '44'
             base-image: 'fedora:43'
+            suffix: 'fedora-43-base'
             test-pkg: grep
-            # base-image overrides distro-version
+            # base-image ignores distro-version
             test-cmd: 'grep "VERSION_ID=43" /etc/os-release'
           - distro: 'ubuntu'
             distro-version: '24.04'
@@ -36,6 +37,7 @@ jobs:
           - distro: ''
             distro-version: ''
             base-image: 'ubuntu:24.04'
+            suffix: 'ubuntu-2404-base'
             test-pkg: grep
             test-cmd: 'grep "VERSION_ID=\"24.04\"" /etc/os-release'
           - distro: 'debian'
@@ -58,6 +60,7 @@ jobs:
           base-image: ${{ matrix.base-image }}
           tag: 'test-${{ github.sha }}'
           packages: ${{ matrix.test-pkg }}
+          suffix: ${{matrix.suffix }}
 
       - name: Verify outputs are set
         run: |

@@ -19,9 +19,8 @@ inputs:
     required: false
   base-image:
     description: >
-      Base OCI image to build from (e.g. "fedora:44", "ubuntu:24.04",
-      "alpine:3.20"). Replaces the distro and distro-version
-      options if set.
+      Base OCI image to build from. Requires suffix to be set. If set, distro
+      and distro-version are only used for package manager detection.
     required: false
   tag:
     description: >
@@ -36,7 +35,7 @@ inputs:
   suffix:
     description: >
       Optional path suffix appended to the image name.  Defaults to the
-      distro/version extracted from base-image (e.g. "fedora/44").
+      distro/version (e.g. "fedora/44"), must be set if base-image is set.
     required: false
     default: ''
   registry:
@@ -68,6 +67,16 @@ inputs:
       that tag already exists.
     required: false
     default: 'false'
+  dockerfile:
+    description: >
+      Path to a Dockerfile to use for the image build.  When set,
+      the image is built with "buildah bud" using this Dockerfile
+      instead of the automatic package-install flow.  Cannot be
+      combined with packages, exec, base-image, or workdir.
+      Distro and version are extracted from the first FROM line
+      unless overridden with distro/distro-version.
+    required: false
+    default: ''
   platform:
     description: >
       Target platform for the container image (e.g. "linux/amd64",
@@ -106,9 +115,6 @@ runs:
         if [[ -n '${{ inputs.distro-version }}' ]]; then
           args+=(--distro-version '${{ inputs.distro-version }}')
         fi
-        if [[ -n '${{ inputs.base-image }}' ]]; then
-          args+=(--base-image '${{ inputs.base-image }}')
-        fi
         if [[ -n '${{ inputs.packages }}' ]]; then
           args+=(--packages '${{ inputs.packages }}')
         fi
@@ -134,4 +140,12 @@ runs:
           args+=(--user-repo '${{ github.event.pull_request.head.repo.full_name }}')
         fi
 
-        "${{ github.action_path }}/container-prep.sh" "${args[@]}"
+        if [[ -n '${{ inputs.base-image }}' ]]; then
+          args+=(--base-image '${{ inputs.base-image }}')
+          "${{ github.action_path }}/container-prep.py" -vv  from-base "${args[@]}"
+        elif [[ -n '${{ inputs.dockerfile }}' ]]; then
+          args+=(--dockerfile '${{ inputs.dockerfile }}')
+          "${{ github.action_path }}/container-prep.py" -vv from-docker "${args[@]}"
+        else
+          "${{ github.action_path }}/container-prep.py" -vv from-scratch "${args[@]}"
+        fi
