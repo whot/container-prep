@@ -13,7 +13,7 @@ but for GitHub Actions instead of GitLab CI.
 
 ```
 action.yml                    # Composite action definition (inputs/outputs/env)
-container-prep.sh             # Implementation (bash)
+container-prep.py             # Implementation (python)
 .github/
   workflows/
     test-build.yml            # CI: matrix build across distros
@@ -30,10 +30,7 @@ container-prep.sh             # Implementation (bash)
 
 ## Development guidelines
 
-- `container-prep.sh` uses `set -euo pipefail` -- all variables must be
-  quoted or use `${VAR:-}` for optional ones
-- The script must work without shellcheck warnings (use `# shellcheck disable=`
-  with justification when necessary)
+- The script must work without ruff warnings and be formatted with ruff format
 - Test new features in `test-features.yml` as separate jobs
 - Test distro support in `test-build.yml` via the matrix
 - Tests run the action via `uses: ./` or invoke the script directly

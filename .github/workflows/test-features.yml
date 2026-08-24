@@ -20,6 +20,9 @@ jobs:
   cache-hit:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
       - uses: actions/checkout@v7
 
       - name: First build (cold cache)
@@ -55,6 +58,9 @@ jobs:
   force-rebuild:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
       - uses: actions/checkout@v7
 
       - name: First build
@@ -87,6 +93,9 @@ jobs:
   exec:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
       - uses: actions/checkout@v7
 
       - name: Build with exec
@@ -116,6 +125,9 @@ jobs:
   exec-repo:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
       - uses: actions/checkout@v7
 
       - name: Build with exec that reads repo files
@@ -127,7 +139,7 @@ jobs:
           tag: 'execrepo-test-${{ github.sha }}'
           exec: |
             test -f action.yml
-            test -f container-prep.sh
+            test -f container-prep.py
             cp action.yml /repo-marker.yml
 
       - name: Verify exec could read repo files
@@ -154,6 +166,9 @@ jobs:
     env:
       CUSTOM_VAR: 'hello-from-host'
     steps:
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
       - uses: actions/checkout@v7
 
       - name: Build with exec that reads host env
@@ -186,6 +201,9 @@ jobs:
   workdir:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
       - uses: actions/checkout@v7
 
       - name: Build with custom workdir
@@ -208,6 +226,9 @@ jobs:
   suffix:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
       - uses: actions/checkout@v7
 
       - name: Build with custom suffix
@@ -229,6 +250,9 @@ jobs:
   bad-base-image:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
       - uses: actions/checkout@v7
 
       - name: Should fail with no version tag
@@ -248,6 +272,9 @@ jobs:
   bad-tag:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
       - uses: actions/checkout@v7
 
       - name: Should fail with invalid tag
@@ -272,6 +299,9 @@ jobs:
   fork-pr-upstream-hit:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
       - uses: actions/checkout@v7
 
       - name: Build image in upstream registry
@@ -288,7 +318,8 @@ jobs:
         run: |
           GITHUB_OUTPUT="$(mktemp)"
           export GITHUB_OUTPUT
-          bash container-prep.sh \
+          python3 container-prep.py \
+            from-scratch \
             --distro 'alpine' \
             --distro-version '3.20' \
             --tag 'fork-up-${{ github.sha }}' \
@@ -311,13 +342,17 @@ jobs:
   fork-pr-pushes-upstream:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
       - uses: actions/checkout@v7
 
       - name: Simulate fork PR (no cache, verify build targets upstream)
         run: |
           GITHUB_OUTPUT="$(mktemp)"
           export GITHUB_OUTPUT
-          bash container-prep.sh \
+          python3 container-prep.py \
+            from-scratch \
             --distro 'alpine' \
             --distro-version '3.20' \
             --tag 'fork-build-${{ github.sha }}' \
@@ -344,6 +379,9 @@ jobs:
   platform:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
       - uses: actions/checkout@v7
 
       - name: Build with explicit platform
@@ -374,6 +412,9 @@ jobs:
   platform-with-suffix:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
       - uses: actions/checkout@v7
 
       - name: Build with platform and explicit suffix
@@ -399,6 +440,9 @@ jobs:
   dockerfile:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
       - uses: actions/checkout@v7
 
       - name: Create test Dockerfile
@@ -440,12 +484,15 @@ jobs:
   dockerfile-distro-override:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
       - uses: actions/checkout@v7
 
       - name: Create test Dockerfile
         run: |
           cat > Dockerfile.test <<'EOF'
-          FROM alpine:3.20
+          FROM debian:stable
           RUN touch /override-marker
           EOF
 
@@ -454,21 +501,24 @@ jobs:
         uses: ./
         with:
           dockerfile: 'Dockerfile.test'
-          distro: 'myimage'
-          distro-version: '1.0'
+          distro: 'alpine'
+          distro-version: '3.20'
           tag: 'df-override-test-${{ github.sha }}'
 
       - name: Verify image path uses overridden distro
         run: |
           image="${{ steps.prep.outputs.image }}"
-          [[ "$image" == *"/myimage/1.0:"* ]] \
-            || { echo "::error::image path should contain /myimage/1.0: $image"; exit 1; }
+          [[ "$image" == *"/alpine/3.20:"* ]] \
+            || { echo "::error::image path should contain /alpine/3.20: $image"; exit 1; }
 
   # ── No packages ───────────────────────────────────────────────────
   # Build with no packages at all -- should produce a working image.
   no-packages:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
       - uses: actions/checkout@v7
 
       - name: Build without packages
